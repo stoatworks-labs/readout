@@ -667,17 +667,29 @@ int runSkew( int width, int height )
 	const int frames    = 8;
 	const double expect = speed * ( static_cast< double >( height ) - 1.0 ) / height;
 
+	// Hold and Blend cannot agree here, and the difference is the point rather
+	// than a tolerance problem. Blend interpolates between the two frames either
+	// side of a row's sample time, so it resolves the one row's worth the last
+	// row is read early and leans by v * (H-1)/H. Hold snaps to whole source
+	// frames, so that sub-frame remainder is not representable at all and the
+	// lean is exactly v.
+	//
+	// The remainder is v/H, so it shrinks as the picture gets taller: 0.02 px at
+	// 1080 rows and 0.13 px at the 180 CI runs on. A single expectation with a
+	// 0.1 px tolerance therefore passed here and failed on CI, which is how this
+	// was found -- the check was calibrated on one raster, not derived.
 	struct Case
 	{
 		const char* name;
 		float interpolation;
 		float direction;
 		double sign;
+		bool holds;
 	};
 	const Case cases[] = {
-		{ "Blend, top down  ", 0.0f, 0.0f, +1.0 },
-		{ "Hold,  top down  ", 1.0f, 0.0f, +1.0 },
-		{ "Blend, bottom up ", 0.0f, 1.0f, -1.0 },
+		{ "Blend, top down  ", 0.0f, 0.0f, +1.0, false },
+		{ "Hold,  top down  ", 1.0f, 0.0f, +1.0, true },
+		{ "Blend, bottom up ", 0.0f, 1.0f, -1.0, false },
 	};
 
 	int failures = 0;
@@ -705,11 +717,12 @@ int runSkew( int width, int height )
 
 		const double top    = rowCentroid( out, width, 0 );
 		const double bottom = rowCentroid( out, width, height - 1 );
-		const double lean   = ( bottom - top ) * c.sign;
-		const bool ok       = top >= 0.0 && bottom >= 0.0 && std::fabs( lean - expect ) <= 0.1;
+		const double lean    = ( bottom - top ) * c.sign;
+		const double wanted  = c.holds ? static_cast< double >( speed ) : expect;
+		const bool ok        = top >= 0.0 && bottom >= 0.0 && std::fabs( lean - wanted ) <= 0.1;
 
 		std::printf( "skew %s bar at %.3f (first row) and %.3f (last row): lean %.3f px, expected %.3f  %s\n",
-		             c.name, c.sign > 0 ? top : bottom, c.sign > 0 ? bottom : top, lean, expect,
+		             c.name, c.sign > 0 ? top : bottom, c.sign > 0 ? bottom : top, lean, wanted,
 		             ok ? "ok" : "FAILED" );
 		if( !ok )
 			++failures;
