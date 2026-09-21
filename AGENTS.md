@@ -72,6 +72,9 @@ with nothing else on the plugin then returns the input **bit-exactly**.
 | `tools/rotest/` | The offline harness: renders, measures, benchmarks, pipes. |
 | `tools/sweep.py` | No control is silently dead. |
 | `tools/verify.sh` | All of it, plus the release-time checks done locally. |
+| `demo/` | The browser demo at `readout-demo.stoatworks-labs.com`. `plugin.js` carries a second copy of all three shaders and a port of `Controls.cpp`, `Ring.cpp` and the uniform-setting half of `ProcessOpenGL`; `demo/vendor/` is the shared kit and is not edited here. |
+| `demo/tools/check_shaders.py` | The demo's GLSL must be the plugin's GLSL, character for character. Run from `verify.sh`. |
+| `wrangler.toml` | The Cloudflare Worker that serves `demo/`. No build step. |
 
 Two passes:
 
@@ -294,6 +297,49 @@ The brief said to decide and write it down.
 - **Direction is one dropdown of four**, and left-right/right-left genuinely swap which
   axis the rows run along — that is what a sensor mounted sideways does, and it is one
   `if` in the shader.
+
+### The browser demo (2026-09-21)
+
+- **The ring is ported in full, at sixteen slots.** WebGL2 has `TEXTURE_2D_ARRAY` and
+  `framebufferTextureLayer`, so `Ring` is the same object with different spellings and
+  the demo did not need the shorter ring the brief would have allowed. Without the ring
+  there is no sub-frame window, and therefore no skew, no jello and no motion blur —
+  there would have been very little demo left.
+- **Audio Drive and Audio Band are absent from the panel, not present and dead.** The
+  spectrum reaches the plugin through a Resolume parameter; a browser has no equivalent
+  and a microphone prompt to demonstrate a video effect is not a trade worth making.
+  The onset impulse stays in the shader because the shader is copied verbatim, and
+  `OnsetTau` is handed over as -1 on every frame so it is never armed.
+- **Trigger keeps all five elements, including Beat, Bar and Onset, which never fire.**
+  Dropping the three that need a host would renumber Interval from 4 to 1, so a link
+  copied off the page would mean something different in Resolume. The control's hint
+  and the on-page disclosure both say which two do anything. This is the one place the
+  page has a control that cannot work; the alternative was worse.
+- **`Fire` is a boolean the renderer releases itself.** The kit's parameter model has
+  no `FF_TYPE_EVENT`, so the page's Fire is a toggle that `createRenderer` sets back to
+  zero once it has queued the pulse — which is exactly what a host does with an event
+  parameter, and why the button blinks.
+- **The demo captures only when its clock advanced**, where `ProcessOpenGL` captures on
+  every call. A browser redraws on Pause and on every parameter drag, and capturing
+  then would fill the ring with sixteen copies of one frame — the skew you paused to
+  look at would fade out over the next few redraws. When the clock is running the two
+  are the same thing. It is the only intentional behavioural difference and it is in
+  the page's disclosure.
+- **One line is spliced into the readout shader before compiling it:**
+  `precision highp sampler2DArray;`. GLSL ES 3.00 gives array samplers no default
+  precision, unlike `sampler2D`, and the shared kit's `port()` declares defaults for
+  `sampler2D`/`usampler2D`/`isampler2D` only. The splice is a separate expression
+  (`READOUT_SOURCE`) precisely so the `READOUT` constant stays byte-identical to
+  `Shaders.cpp` and `check_shaders.py` keeps its grip.
+- **The default clip is the geometry card.** Its straight lines are what the jello
+  bends, and its rotating spoke is the propeller photograph — the one rolling-shutter
+  effect that needs no code at all, only content that happens to be turning.
+- **`sync.sh` does not know this repo.** The kit master is
+  `stoatworks-backend/resolume-demo/`, and its `repos=(…)` array does not list
+  `readout`, so a bare `./sync.sh` skips it silently. Re-vendor with the repo named:
+  `./sync.sh readout`, and check the output says `synced readout` rather than
+  `skip readout (no demo/)`. Adding it to that array is a change in the backend repo
+  and belongs there.
 
 ---
 

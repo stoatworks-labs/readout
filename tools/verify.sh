@@ -133,6 +133,28 @@ else
 	fail "a shader does not compile"
 fi
 
+#---------------------------------------------------------------------------
+# The browser demo carries a SECOND copy of all three shaders, because a page
+# cannot include a C++ file. Two copies of a shader is exactly the arrangement
+# that drifts, and the drift is invisible from both sides: the plugin keeps
+# working, the page keeps working, and they quietly stop being the same effect.
+# The page's whole claim is that what it runs is the plugin's own code.
+#
+# Character for character, whitespace included -- "it is only a reformat" is how
+# a real change gets waved through.
+#---------------------------------------------------------------------------
+step "demo shaders"
+if [ -f demo/tools/check_shaders.py ]; then
+	if out=$(python3 demo/tools/check_shaders.py 2>&1); then
+		pass "$( printf '%s\n' "$out" | tail -1 )"
+	else
+		fail "demo/plugin.js has drifted from source/Shaders.cpp"
+		printf '%s\n' "$out" | sed 's/^/      /'
+	fi
+else
+	fail "demo/tools/check_shaders.py is missing -- nothing is checking the demo's shader copies"
+fi
+
 step "build (fresh universal Release, $BUILD)"
 rm -rf "$BUILD"
 if cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1 \

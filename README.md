@@ -57,6 +57,27 @@ macOS builds are signed and notarised and open normally. The Windows builds are 
 
 <!-- downloads:end -->
 
+## Try it in your browser
+
+**<https://readout-demo.stoatworks-labs.com>**
+
+Not the plugin — the GLSL from `source/Shaders.cpp`, copied across unedited and run in
+WebGL2 over clips generated in the page, with the frame ring and the control arithmetic
+ported alongside it and the parameters this plugin's constructor declares. No install,
+and nothing you load leaves your machine.
+
+Start on the geometry card and drag **Readout Time** to the top. Then turn **Amount** up
+for the jello, set **Mains** to 50 Hz for the bands, and press **Fire** — or set
+**Trigger** to Interval, because one pulse lasts a frame or two, exactly as a real
+strobe does.
+
+Two things are **not** on that page, and it says so itself: the whole audio side (the
+spectrum arrives through a Resolume parameter and a browser has no equivalent), and
+Trigger's Beat and Bar, which read Resolume's transport. It is a port, so it is not
+evidence about the plugin either: a browser is not Resolume, GLSL ES 3.00 is not desktop
+GL 4.1 core, and nothing on that page measures anything. The numbers worth trusting are
+in [Status](#status) and come from the harness in this repository.
+
 ## The one idea
 
 A CMOS sensor does not expose a frame. It exposes and reads its **rows**, one after
@@ -181,9 +202,10 @@ the clip's effect list. No long session, no composition save or reload and no pr
 recall in the host were exercised. No real audio reached the plugin in Arena: the audio
 path has still only seen the harness's synthetic spectrum, never Resolume's FFT, and
 the 64-bin mapping is still assumed rather than measured. Beat and Bar have only seen a
-synthetic 120 bpm transport. Nothing has been built for Linux. There is no user guide,
-no OpenFX port and no browser demo — none of them in scope for 0.1.0 — and no factory
-presets. Nothing has been through a show.
+synthetic 120 bpm transport. Nothing has been built for Linux. There is no user guide
+and no OpenFX port — neither in scope for 0.1.0 — and no factory presets. Nothing has
+been through a show. The [browser demo](#try-it-in-your-browser) is a WebGL2 port and
+proves nothing about the plugin; it exists to be looked at, not to be cited.
 
 ## Build
 
