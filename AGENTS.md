@@ -338,13 +338,14 @@ Release build. The scene is synthetic and the expectation is closed-form in each
 
 ### Verified in Resolume Arena, on Windows (2026-09-21)
 
-The x64 Windows DLL is **cross-compiled in the Parallels guest on this Mac** — ARM64
+The DLL taken to Arena was **cross-compiled in the Parallels guest on this Mac** — ARM64
 Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
-`x64-windows-static-md`. There is no x64 Windows machine in the build loop. It was then
-taken to **win-lab**, an x64 Windows 11 Pro VM with **no GPU**: the adapter is the
-Microsoft Basic Display Adapter, so OpenGL is **Mesa llvmpipe** dropped in beside
-Arena. The host was **Resolume Arena 7.27.1** (build 15990), started in the console
-session.
+`x64-windows-static-md` — because there is no x64 Windows machine in the *local* build
+loop. CI builds x64 Windows itself, but that build has never been in front of Arena.
+The hand-built one was taken to **win-lab**, an x64 Windows 11 Pro VM with **no GPU**:
+the adapter is the Microsoft Basic Display Adapter, so OpenGL is **Mesa llvmpipe**
+dropped in beside Arena. The host was **Resolume Arena 7.27.1** (build 15990),
+started in the console session.
 
 - **The DLL builds and exports the entry point.** **374,272 bytes**, and
   `dumpbin /EXPORTS` shows **`plugMain`**.
