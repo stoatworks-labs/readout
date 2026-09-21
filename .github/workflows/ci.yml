@@ -1,0 +1,96 @@
+name: ci
+
+# Both platforms on every push and pull request, so a Dependabot bump has a
+# status check to gate on and a GLEW-shaped break -- which macOS is
+# structurally blind to, because macOS never links GLEW -- is caught before a
+# tag. There is no Linux job: the CMakeLists branches on APPLE and WIN32.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The FFGL SDK is a submodule. Without this CMake fails at configure
+          # time with a missing-directory error that reads like a broken repo.
+          submodules: recursive
+
+      - name: Configure
+        # arm64 only, unlike the release build's universal arm64;x86_64 -- the
+        # second slice doubles the build for no extra signal, because a source
+        # break is not architecture-specific.
+        #
+        # READOUT_BUILD_TOOLS is ON here where the release build turns it OFF:
+        # rotest is the only place the physics is written down as a number,
+        # so compiling and running it is most of the value.
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DREADOUT_BUILD_TOOLS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Parameters
+        # No GL needed, so this one cannot be a runner problem.
+        run: ./build/rotest --list
+
+      - name: Physics
+        # The runner has no accelerated GL; the harness falls back to a
+        # software context. Small rasters, because every check renders eight
+        # frames at picture size and software rasterisation is slow -- the
+        # closed forms scale with the raster, so nothing is lost but rows.
+        timeout-minutes: 20
+        run: |
+          ./build/rotest --global  --size 320x180
+          ./build/rotest --skew    --size 320x180
+          ./build/rotest --band    --size 320x180
+          ./build/rotest --flicker --size 320x180
+          ./build/rotest --jello   --size 320x180
+
+      - name: Controls
+        # At 160x90 and two at a time, because the runner has no GPU and the
+        # question is only whether a control changed ANY subpixel. Graticule's
+        # first run of this step at 320x180 was still going at twenty minutes.
+        timeout-minutes: 25
+        run: python3 tools/sweep.py --size 160x90 --jobs 2
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: readout-macos-arm64
+          path: build/*.bundle
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        # The toolchain path MUST stay double-quoted: a `run:` step on Windows
+        # is PowerShell, and unquoted this expands to nothing.
+        run: >
+          cmake -B build -A x64
+          -DCMAKE_BUILD_TYPE=Release
+          -DREADOUT_BUILD_TOOLS=OFF
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: readout-windows-x86_64
+          path: build/Release/*.dll
+          if-no-files-found: error
