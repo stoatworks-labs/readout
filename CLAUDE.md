@@ -12,6 +12,10 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Build: `cmake --build build --parallel`
 - Install into Arena: `cmake --install build` — **not run from a session**, it writes
   into `~/Documents/Resolume Arena/Extra Effects`
+- x64 Windows DLL: cross-compiled in the Parallels guest — `cmake -A x64`, MSVC 2022
+  Build Tools, vcpkg triplet `x64-windows-static-md`. 374,272 B, exports `plugMain`.
+  On win-lab, Arena must be started through the session-1 wrapper `C:\arena-lab\s1.ps1`
+  (`AGENTS.md`); an ssh session there has no desktop.
 - Render a frame offline: `./build/rotest --out /tmp/f.png --size 1920x1080`
 - Set anything by name: `--set "Readout Time=0.9" --set "Mains=1"`
 - List parameters, kinds, defaults and ranges: `./build/rotest --list`
@@ -58,8 +62,11 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - FFGL id is `RO01`, display name `SW Readout` (16 characters, the host's limit).
 
 ## Not done yet
-- **Never loaded into Resolume.** Everything is measured offline, plus an `oxbow`
-  load. No release tag, not registered on the website, no OpenFX port, no browser demo.
+- **Never run on a GPU in Resolume, and never instantiated in Arena on macOS.** It was
+  registered, loaded and instantiated in Arena 7.27.1 on Windows on 2026-09-21, on Mesa
+  llvmpipe, with the shaders compiling — no GPU, and nothing timed there. Everything
+  numeric is still measured offline on macOS, plus an `oxbow` load. No release tag, not
+  registered on the website, no OpenFX port, no browser demo.
 - `source/StoatworksAbout.h` and `ATTRIBUTIONS.md` are provisional hand copies with
   `guide=""`.
 
@@ -67,4 +74,5 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 
 `source/Diag.{h,cpp}` — log file only, no crash handler (this runs inside Resolume).
 
-    ~/Library/Logs/readout/readout.YYYY-MM-DD.log
+    ~/Library/Logs/readout/readout.YYYY-MM-DD.log        (macOS)
+    %LOCALAPPDATA%\readout\readout.YYYY-MM-DD.log        (Windows)

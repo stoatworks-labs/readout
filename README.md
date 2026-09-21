@@ -8,9 +8,11 @@
 > phase says, 50 and 60 Hz mains bands sit `T_light / readout` apart, a sinusoidal
 > shake wobbles the rows at `1/f / readout`, and Global returns the input
 > bit-exactly — with a negative control on the last of those so the check can fail.
-> It has **never been loaded into Resolume**. It has been loaded by
-> [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real FFGL host and is
-> not Resolume. See [Status](#status).
+> It has been registered, loaded and instantiated in **Resolume Arena 7.27.1 on
+> Windows**, on a software rasteriser, with its shaders compiling. It has **never run
+> on a GPU in Resolume**, and has never been instantiated in Arena on macOS. It is
+> also loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real
+> FFGL host and is not Resolume. See [Status](#status).
 
 A CMOS rolling shutter, as an FFGL effect for [Resolume](https://resolume.com) Arena
 and Avenue.
@@ -84,6 +86,8 @@ audio. Audio Drive defaults to zero, so with nothing routed the camera sits stil
 
 **v0.1.0, and honestly early — 21 September 2026.**
 
+### Measured offline, on macOS
+
 `tools/verify.sh` passes on this machine (M4 Max, macOS 26.4.1) against a fresh
 universal Release build. What it establishes, in numbers:
 
@@ -100,18 +104,53 @@ universal Release build. What it establishes, in numbers:
 
 Render cost, 60 frames after a warm-up with `glFinish` both sides, at the defaults:
 **0.278 ms** at 720p, **0.517 ms** at 1080p, **0.902 ms** at 1440p and **2.274 ms** at
-4K — a seventh of a 60 fps frame at 4K.
+4K — a seventh of a 60 fps frame at 4K. Those are macOS figures and only macOS
+figures.
 
-**What is not established.** It has never been loaded into Resolume, so how the five
-groups present, whether 21 controls read sensibly in an inspector, and what the host's
-clock actually looks like on the way in are all untested — the clock-unit calibration
-is the fleet's, proven elsewhere against Arena, but this copy has only ever seen a
-seconds host. Beat and Bar have only seen a synthetic 120 bpm transport. The audio path
-has only seen the harness's synthetic spectrum, never Resolume's FFT. Nothing has been
-built for Windows or Linux: the CI and release workflows are adapted from siblings and
-have never run. There is no OpenFX port and no browser demo — neither is in scope for
-0.1.0 — and no factory presets. There is no release, and nothing has been through a
-show.
+### In Resolume Arena, on Windows — 21 September 2026
+
+The x64 Windows DLL is **cross-compiled in the Parallels guest on this Mac** (ARM64
+Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
+`x64-windows-static-md`); there is no x64 Windows machine in the build loop. It comes
+out at **374,272 bytes**, and `dumpbin /EXPORTS` shows **`plugMain`**.
+
+That DLL was taken to win-lab — an x64 Windows 11 Pro VM with **no GPU**: the adapter
+is the Microsoft Basic Display Adapter, so OpenGL comes from **Mesa llvmpipe** dropped
+in beside Arena. The plugin reported the context itself:
+`GL vendor=Mesa renderer=llvmpipe (LLVM 22.1.8, 256 bits) version=4.5 (Core Profile) Mesa 26.2.0`.
+
+| check | result, in **Resolume Arena 7.27.1** (build 15990) unless noted |
+| --- | --- |
+| Arena registers it | `/api/v1/effects` lists **`SW Readout`** among 112 video effects, under its FFGL id **`RO01`** as `idstring`, with the description the plugin declares |
+| Arena loads the DLL | `%LOCALAPPDATA%\readout\` holds `plugin loaded build=<stamp>`, the stamp of the DLL built minutes earlier |
+| Arena instantiates it, and the shaders compile | applied from Arena's own effects browser: the diag log shows the Mesa 4.5 Core Profile line and then `initialised`, and Arena drew its inspector for it, groups and all |
+| `oxbow selftest`, x64 | **120 frames, gl error 0x0, PASS**, with **921,600 of 921,600** pixels lit (100%) |
+| the diag log | clean of WARN, ERROR and FAIL |
+
+**The clock-unit detection has now met a real host.** This repo is where the
+float-overflow trap in Resolume's clock was found, and the detector that votes on the
+host's unit had until now only ever seen a seconds host. Under `oxbow` this plugin's
+own diag log still settles on **seconds** (`scale=1.000000` by frame 60). Under Arena
+the fleet's plugins saw **milliseconds** — a raw host time of about **574,073** — and
+the detection decided milliseconds there. So the trap is real in Arena and the
+detection handles it. What was not read back is this plugin's own in-Arena vote: the
+milliseconds line came from a sibling's log, not from `readout`'s.
+
+**What is not established.** It has **never run on a GPU in Resolume** — the Windows
+run was llvmpipe, a software rasteriser — and it has **never been instantiated in
+Arena on macOS**. Nothing was timed on Windows: there is no frame timing from win-lab
+at all, so whether the render cost above survives a real host is an open question. The
+effect was applied to the **composition**, not to a clip — `/api/v1/…/clips/1` still
+showed only `Transform` afterwards, so the proof of instantiation is the diag log, not
+the clip's effect list. No long session, no composition save or reload and no preset
+recall in the host were exercised. No real audio reached the plugin in Arena: the audio
+path has still only seen the harness's synthetic spectrum, never Resolume's FFT, and
+the 64-bin mapping is still assumed rather than measured. Beat and Bar have only seen a
+synthetic 120 bpm transport. Nothing has been built for Linux, and the CI and release
+workflows are adapted from siblings and have never run — the Windows DLL was built by
+hand in the guest. There is no OpenFX port and no browser demo — neither is in scope
+for 0.1.0 — and no factory presets. There is no release, and nothing has been through
+a show.
 
 ## Build
 
@@ -127,6 +166,9 @@ cmake --install build     # into ~/Documents/Resolume Arena/Extra Effects
 
 macOS builds are universal (Apple Silicon + Intel) by default; add
 `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster dev build. Windows needs GLEW via vcpkg.
+The x64 Windows DLL that was loaded into Arena was cross-compiled in the Parallels
+guest on this Mac — `cmake -A x64`, MSVC 2022 Build Tools, vcpkg triplet
+`x64-windows-static-md`.
 
 ## Building and testing
 

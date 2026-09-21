@@ -12,3 +12,5 @@
 /.vscode/
 *.xcodeproj/xcuserdata/
 
+# Windows cross-build output
+/out-windows/

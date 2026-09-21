@@ -100,6 +100,15 @@ So **nothing absolute crosses into GLSL**. Time in the shader is `tau`, seconds 
 each shake component's phase are reduced into 0..2π on the CPU, in `double`
 (`reducedAngle`), and handed over as angles. Keep it that way.
 
+**The Windows run of 2026-09-21 is the first confirmation of this from a real host.**
+Under `oxbow` the detector settles on **seconds** — this plugin's own diag log shows
+`scale=1.000000` by frame 60. Under **Arena 7.27.1** the fleet's plugins saw
+**milliseconds**, a raw host time of about **574,073**, and the detection decided
+milliseconds. The unit really does differ between hosts, the voting code really does
+pick it up, and the number really is large enough to matter in a `float`. What is still
+missing is `readout`'s own in-Arena log line: the milliseconds decision was read from a
+sibling's log during that run, not from this one's.
+
 ### ☠️ The ring must be an array texture, not N samplers
 
 The readout pass has to fetch a different frame per *pixel* — a row near the top of the
@@ -241,6 +250,24 @@ GLEW arrives through the vcpkg manifest and nothing in `CMakeLists.txt` mentions
 so every local build and every macOS CI job passes while the Windows job fails at
 *configure*.
 
+### ☠️ An ssh session on Windows has no desktop, so Arena starts but does nothing
+
+An ssh login lands on the **service window station**, which has no desktop. Arena
+launched from there sits at about 31 MB, never opens a window, loads nothing, and
+cannot be screenshotted — and it does not say why. It has to be started **in the
+console session (session 1)**, through the scheduled-task wrapper `C:\arena-lab\s1.ps1`
+on win-lab. Anything that needs Arena to actually render goes through that wrapper.
+
+### ☠️ Arena's REST API lists effects by `idstring`, and its add-effect route lies
+
+`/api/v1/effects` and `/api/v1/sources` key each entry by the **FFGL id** — `RO01`, not
+`SW Readout` — as `idstring`, so searching the list by display name finds nothing even
+when the plugin is registered. Worse, the add-effect endpoint returns **200 without
+adding anything**: after posting to it, `/api/v1/…/clips/1` still showed only
+`Transform`. Instantiation has to be driven from **Arena's own effects browser** (a
+double-click applies the effect to the current selection), and the proof is the
+plugin's diag log, not the clip's effect list.
+
 ---
 
 ## Decisions taken without asking
@@ -304,23 +331,59 @@ Release build. The scene is synthetic and the expectation is closed-form in each
   sides, defaults): **0.278 ms** at 720p, **0.517 ms** at 1080p, **0.902 ms** at 1440p,
   **2.274 ms** at 4K — 13.6% of a 60 fps frame at 4K.
 
+### Verified in Resolume Arena, on Windows (2026-09-21)
+
+The x64 Windows DLL is **cross-compiled in the Parallels guest on this Mac** — ARM64
+Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
+`x64-windows-static-md`. There is no x64 Windows machine in the build loop. It was then
+taken to **win-lab**, an x64 Windows 11 Pro VM with **no GPU**: the adapter is the
+Microsoft Basic Display Adapter, so OpenGL is **Mesa llvmpipe** dropped in beside
+Arena. The host was **Resolume Arena 7.27.1** (build 15990), started in the console
+session.
+
+- **The DLL builds and exports the entry point.** **374,272 bytes**, and
+  `dumpbin /EXPORTS` shows **`plugMain`**.
+- **Arena registers it.** `/api/v1/effects` lists **`SW Readout`** among 112 video
+  effects, under its FFGL id **`RO01`** as `idstring`, with the description the plugin
+  declares. That is the in-host counterpart to the `oxbow probe` name check.
+- **Arena loads the DLL.** `%LOCALAPPDATA%\readout\` holds
+  `plugin loaded build=<stamp>`, the stamp of the DLL built minutes earlier.
+- **Arena instantiates it, and the shaders compile.** Applied from Arena's own effects
+  browser, the diag log shows
+  `GL vendor=Mesa renderer=llvmpipe (LLVM 22.1.8, 256 bits) version=4.5 (Core Profile) Mesa 26.2.0`
+  followed by `initialised`, and Arena drew its inspector for it, groups and all. So
+  `instantiateGL` — and with it the `SetTextParameter` trap — survives a real host.
+- **It renders headlessly on x64 Windows too.** `oxbow selftest`, built x64 in the same
+  guest: **120 frames, gl error 0x0, PASS**, with **921,600 of 921,600** pixels lit
+  (100%).
+- **The clock-unit detection met a real host**, and decided **milliseconds** under Arena
+  against **seconds** under `oxbow`. See the first trap above.
+- **No warnings or errors.** The diag log is clean of WARN, ERROR and FAIL.
+
+That run did not establish two things: **no GPU was involved** — it was all llvmpipe —
+and **nothing was timed on Windows**, so the millisecond figures above stay
+macOS-only. The effect was applied to the **composition**, not to a clip:
+`/api/v1/…/clips/1` still showed only `Transform` afterwards, so the proof of
+instantiation is the diag log rather than the clip's effect list.
+
 ### Assumed, or not done
 
-- ☠️ **It has never been loaded into Resolume.** No Arena, by instruction. `oxbow` is a
-  real FFGL host and is not Resolume: how the five groups present, whether 21 controls
-  read sensibly in the inspector, whether Resolume draws `Fire` as a button that sends
-  one rising edge per press, and what its clock and blend state actually look like on
-  the way in are all untested here.
-- ☠️ **The clock-unit calibration has never seen a millisecond host.** The harness
-  declares seconds. The voting code is lifted from `regauss`/`afterglow`, where it was
-  measured against Arena, but this copy has only ever been run against a seconds host.
+- ☠️ **It has never run on a GPU in Resolume, and has never been instantiated in Arena
+  on macOS.** The Arena run above was on llvmpipe, a software rasteriser, on Windows —
+  which proves registration, loading, instantiation and shader compilation, and nothing
+  about speed. Whether 21 controls read sensibly to somebody using them, whether
+  Resolume draws `Fire` as a button that sends one rising edge per press, and what its
+  blend state looks like on the way in are all still untested.
 - **Beat and Bar have only seen a synthetic 120 bpm transport.** Whether Resolume's
   `barPhase` behaves as assumed across a tempo change or a scrub is unknown.
 - **The audio path has only ever seen `rotest`'s synthetic spectrum**, never Resolume's
-  own FFT. The 64-bin count and the sqrt on the magnitudes are the fleet's figures,
-  taken on trust.
-- **Nothing has been built for Windows or Linux.** The CI and release workflows are
-  adapted from `tinsel` and have never run — there is no GitHub repo yet.
+  own FFT — no real audio reached the plugin during the Arena run either. The 64-bin
+  count and the sqrt on the magnitudes are the fleet's figures, taken on trust.
+- **Nothing has been built for Linux**, and the x64 Windows DLL was built by hand in
+  the guest: the CI and release workflows are adapted from `tinsel` and have never run
+  — there is no GitHub repo yet.
+- **No long session, no composition save or reload, and no preset recall in the host**
+  were exercised on Windows.
 - **No OpenFX port and no browser demo.** Not required for 0.1.0.
 - **No factory presets**, and therefore none of the preset/host-echo machinery the rest
   of the fleet carries.
