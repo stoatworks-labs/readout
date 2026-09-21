@@ -93,14 +93,14 @@ universal Release build. What it establishes, in numbers:
 
 | check | result |
 | --- | --- |
-| `--skew` | a bar at 24 px/frame under a one-frame readout leans **24.000 px**, expected **23.967** — Blend and Hold, top-down and bottom-up |
+| `--skew` | a bar at 24 px/frame under a one-frame readout leans **24.000 px** in all three cases — Blend and Hold, top-down and bottom-up. Blend's closed form is **23.967** (the last row is read 1/H of a frame early) and Hold's is **24.000** (it snaps to whole source frames); each is inside the harness's **0.1 px** tolerance, so all three pass |
 | `--band` | a 8 ms flash at 4 ms exposure over a 40 ms readout bands **215.0 rows** of 720, expected **216.0**, centred **252.5** against **252.0**, peaking +191/255 |
 | `--flicker` | 50 Hz: **120.00 rows** period, expected **120.00**. 60 Hz: **100.00**, expected **100.00** |
 | `--jello` | a 40 Hz shake over a 60 ms readout: period **300.00 rows** (expected 300.00), swing **28.80 px** (expected 28.80) |
 | `--global` | **0/255** deviation from the input, twice; the negative control differs by 164/255, so the check can fail |
 | `tools/sweep.py` | all **20** swept controls measurably change the picture |
 | shaders | all 3 compile through `glslc`, not merely through Apple's driver |
-| the bundle | universal (`x86_64 arm64`), exports `plugMain`, ad-hoc signs, and `oxbow` reports `SW Readout` / `RO01` / `effect` and renders 120 frames through `plugMain` |
+| the bundle | a local build is universal (`x86_64 arm64`), exports `plugMain` and ad-hoc signs; `oxbow` reports `SW Readout` / `RO01` / `effect` and renders 120 frames through `plugMain` |
 
 Render cost, 60 frames after a warm-up with `glFinish` both sides, at the defaults:
 **0.278 ms** at 720p, **0.517 ms** at 1080p, **0.902 ms** at 1440p and **2.274 ms** at
@@ -109,10 +109,13 @@ figures.
 
 ### In Resolume Arena, on Windows — 21 September 2026
 
-The x64 Windows DLL is **cross-compiled in the Parallels guest on this Mac** (ARM64
+The DLL taken to Arena was **cross-compiled in the Parallels guest on this Mac** (ARM64
 Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
-`x64-windows-static-md`); there is no x64 Windows machine in the build loop. It comes
-out at **374,272 bytes**, and `dumpbin /EXPORTS` shows **`plugMain`**.
+`x64-windows-static-md`), because there is no x64 Windows machine in the local build
+loop. It comes out at **374,272 bytes**, and `dumpbin /EXPORTS` shows **`plugMain`**.
+The *released* DLL is a different build: CI builds x64 Windows on every push and the
+release workflow builds it again on a GitHub runner. That build has never been put in
+front of Arena.
 
 That DLL was taken to win-lab — an x64 Windows 11 Pro VM with **no GPU**: the adapter
 is the Microsoft Basic Display Adapter, so OpenGL comes from **Mesa llvmpipe** dropped
@@ -146,11 +149,9 @@ the clip's effect list. No long session, no composition save or reload and no pr
 recall in the host were exercised. No real audio reached the plugin in Arena: the audio
 path has still only seen the harness's synthetic spectrum, never Resolume's FFT, and
 the 64-bin mapping is still assumed rather than measured. Beat and Bar have only seen a
-synthetic 120 bpm transport. Nothing has been built for Linux, and the CI and release
-workflows are adapted from siblings and have never run — the Windows DLL was built by
-hand in the guest. There is no OpenFX port and no browser demo — neither is in scope
-for 0.1.0 — and no factory presets. There is no release, and nothing has been through
-a show.
+synthetic 120 bpm transport. Nothing has been built for Linux. There is no user guide,
+no OpenFX port and no browser demo — none of them in scope for 0.1.0 — and no factory
+presets. Nothing has been through a show.
 
 ## Build
 

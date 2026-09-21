@@ -4,8 +4,10 @@ Readout is built on other people's work. This file lists what that work is, who 
 it, and what it is doing here.
 
 It is PROVISIONAL: hand-written in the shape the `stoatworks-backend` sync
-(`scripts/sync-attributions.py`) generates, because Readout is not yet registered
-there. Once it is, the sync overwrites this file; edit it there, not here.
+(`scripts/sync-attributions.py`) generates. Readout is in that script's
+`names.json` but not in its component lists, so the sync cannot produce this file
+yet — v0.1.0 shipped with the hand copy. Once the registration is finished the
+sync overwrites this file; edit it there, not here.
 
 ## Third-party code this project uses
 

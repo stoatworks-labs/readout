@@ -305,8 +305,13 @@ Every number below is `tools/verify.sh` on this machine, against a fresh univers
 Release build. The scene is synthetic and the expectation is closed-form in each case.
 
 - **Skew.** A bar moving at 24 px/frame under a one-frame readout leans **24.000 px**
-  against an expected **23.967** (the last row is read one row's worth before the
-  timestamp, hence the 1/H). Three cases: Blend and Hold, top-down and bottom-up.
+  in all three cases. Blend and Hold cannot agree here and should not: Blend resolves
+  the one row's worth the last row is read before the timestamp, so its closed form is
+  **23.967** (the 1/H), while Hold snaps to whole source frames and its closed form is
+  **24.000**. The harness allows **0.1 px**, which is what makes both pass; the
+  remainder is v/H, so it is 0.02 px at 1080 rows and 0.13 px at the 180 CI runs on —
+  which is why a single expectation calibrated on one raster failed on CI. Three cases:
+  Blend and Hold, top-down and bottom-up.
 - **Flash banding.** With `T_read` 40 ms, `T_exp` 4 ms, `T_flash` 8 ms at phase 0.30 on
   a 720-row frame: band **215.0 rows** against an expected **216.0**, centred at
   **252.5** against an expected **252.0**, peaking **+191/255**.
@@ -379,20 +384,21 @@ instantiation is the diag log rather than the clip's effect list.
 - **The audio path has only ever seen `rotest`'s synthetic spectrum**, never Resolume's
   own FFT — no real audio reached the plugin during the Arena run either. The 64-bin
   count and the sqrt on the magnitudes are the fleet's figures, taken on trust.
-- **Nothing has been built for Linux**, and the x64 Windows DLL was built by hand in
-  the guest: the CI and release workflows are adapted from `tinsel` and have never run
-  — there is no GitHub repo yet.
+- **Nothing has been built for Linux.** The DLL taken to Arena was built by hand in the
+  guest; the released one was not. CI (macOS and Windows) and the release workflow have
+  both run and passed on GitHub, and the CI Windows build has never been put in front of
+  Arena.
 - **No long session, no composition save or reload, and no preset recall in the host**
   were exercised on Windows.
 - **No OpenFX port and no browser demo.** Not required for 0.1.0.
 - **No factory presets**, and therefore none of the preset/host-echo machinery the rest
   of the fleet carries.
-- **`StoatworksAbout.h` and `ATTRIBUTIONS.md` are provisional hand copies**, in the
-  shape the `stoatworks-backend` syncs generate, with `guide=""` because no user guide
-  exists. Registering the project in the website's `projects.json`, in
-  `sync-about.py`'s TARGETS and in `attributions/names.json` and re-running the syncs
-  is a prerequisite for a release. The facts were chosen so the button count — and
-  therefore the parameter count — does not change when it is regenerated.
+- **`ATTRIBUTIONS.md` is still a provisional hand copy**, in the shape the
+  `stoatworks-backend` sync generates. The project is now in the website's
+  `projects.json`, in `sync-about.py`'s TARGETS and in `attributions/names.json`, so
+  `StoatworksAbout.h` is **generated** — do not hand-edit it; it still carries
+  `guide=""` because no user guide exists. What is still missing is
+  `sync-attributions.py`'s own master lists, which is why this file is hand-written.
 - **Nothing has been through a real show.**
 
 ---
@@ -419,5 +425,6 @@ instantiation is the diag log rather than the clip's effect list.
 - **`regauss`** — the audio input, the transport, and the clock-unit voting.
 - **`tinsel`** — the harness shape, `sweep.py`, `verify.sh`, the CI and release
   workflows. Its `AGENTS.md` is the fleet's trap list.
-- **`graticule`** — the provisional-About pattern and the `verify.sh` shape used here.
+- **`graticule`** — the About-header pattern (a hand copy at first, generated since) and
+  the `verify.sh` shape used here.
 - **`oxbow`** — `oxbow probe` and `oxbow selftest` are what load this bundle as a host.
