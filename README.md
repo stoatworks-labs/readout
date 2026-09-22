@@ -25,6 +25,20 @@ while it fired ever saw, the broad horizontal shading is a 50 Hz lamp beating ag
 the readout, and the vertical bars are bent because the camera moved while the sensor
 was still reading.</sub>
 
+[![Readout — a CMOS rolling shutter for Resolume](docs/video-thumb.png)](https://www.youtube.com/watch?v=1dYEzeCZF1Y)
+
+*[Watch it](https://www.youtube.com/watch?v=1dYEzeCZF1Y) — 50 seconds: the readout
+ramped the full length of its travel until three tumbling rings come apart, a
+wireframe city gone wavy under camera shake, an amber strobe band walking down a dark
+room, mains bands rolling over a glow, all of it at once, and Global as the A/B. Every
+frame is the real plugin's output: an FFGL plugin has no window, so the footage is
+rendered by this repository's own offline harness (`rotest --pipe`, driven by a cue
+sheet) rather than filmed off a screen, on Resolume's own bundled demo clips — most of
+them played fast, because a rolling shutter's lean is how fast the scene moves
+multiplied by the readout, and these loops amble. The audio side is not in it: offline
+the only spectrum there is would be a synthetic one, so it is left out rather than
+faked.*
+
 <!-- downloads:start -->
 
 ## Download

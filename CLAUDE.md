@@ -78,8 +78,12 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - **Never run on a GPU in Resolume, and never instantiated in Arena on macOS.** It was
   registered, loaded and instantiated in Arena 7.27.1 on Windows on 2026-09-21, on Mesa
   llvmpipe, with the shaders compiling — no GPU, and nothing timed there. Everything
-  numeric is still measured offline on macOS, plus an `oxbow` load. No user guide, no
-  OpenFX port, no video.
+  numeric is still measured offline on macOS, plus an `oxbow` load. No user guide and
+  no OpenFX port.
+- The **project video** is up (`1dYEzeCZF1Y`). Its scripts live in
+  `stoatworks-backend/video/projects/readout` and its footage is `rotest --pipe` on
+  Resolume's demo clips — nothing in it was recorded off a screen, and nothing in it
+  is evidence about Resolume either.
 - The **browser demo** is live but it is a port, not evidence: WebGL2 rather than
   desktop GL 4.1, no audio path at all, and Trigger's Beat, Bar and Onset never fire
   there. `AGENTS.md` records every decision behind it.
