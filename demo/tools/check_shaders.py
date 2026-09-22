@@ -26,10 +26,12 @@ whether they still agree. When you change a mapping, change it there too -- and
 remember that a wrong one shows up on the page as a band in slightly the wrong
 place, which nobody will notice.
 
-It also does not check `READOUT_SOURCE`, the one line plugin.js splices in after
-the version directive so that GLSL ES 3.00 has a precision for `sampler2DArray`.
-That splice is deliberately a separate expression, precisely so the constant it
-reads from stays byte-identical to the C++ and this check keeps its grip.
+Nor does it check anything the kit does to the text on its way to the compiler.
+`port()` in demo/vendor/gl.js rewrites the version line and prepends the
+precision block GLSL ES 3.00 needs -- including `sampler2DArray`, which the
+readout pass reads and which ES 3.00 gives no default precision. That happens
+to the string at run time, so the constants here stay byte-identical to the C++
+and this check keeps its grip.
 """
 import re
 import sys

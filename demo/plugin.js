@@ -374,26 +374,17 @@ void main()
 }
 `;
 
-/**
- * The readout pass reads a `sampler2DArray`, and GLSL ES 3.00 gives that type
- * **no default precision** — unlike `sampler2D`, which has `lowp` in the
- * fragment stage. Desktop GL 4.1 needs none of this, which is why the plugin's
- * source carries none, and the kit's `port()` declares defaults for `sampler2D`,
- * `usampler2D` and `isampler2D` but not for the array samplers.
- *
- * The symptom, if this line is dropped, is `'sampler2DArray' : No precision
- * specified` and nothing else — on some drivers. Others accept it. Which is the
- * worst kind of difference to leave to chance.
- *
- * It is spliced in after the version directive rather than typed into READOUT,
- * so the constant above stays byte-identical to the C++ and check_shaders.py
- * keeps its grip. `port()` strips the `#version 410 core` line and prepends its
- * own precision block, so this ends up immediately after it.
- */
-const READOUT_SOURCE = READOUT.replace(
-  '#version 410 core\n',
-  '#version 410 core\nprecision highp sampler2DArray;\n',
-);
+// The readout pass reads a `sampler2DArray`, which GLSL ES 3.00 gives no
+// default precision at all — unlike `sampler2D`, which has one in the fragment
+// stage. Without a declaration the shader fails to compile with
+// `'sampler2DArray' : No precision specified` on some drivers and is accepted
+// by others, which is the worst kind of difference to leave to chance.
+//
+// This page used to splice `precision highp sampler2DArray;` in after the
+// version directive itself. The kit's `port()` now declares it, along with the
+// 3D and integer array samplers, so READOUT goes to the compiler as it is
+// written — and the fix is in the one place the other demos read from rather
+// than in this file alone.
 
 //---------------------------------------------------------------------------
 // controls — a port of source/Controls.cpp.
@@ -670,7 +661,7 @@ class Ring {
 
 function createRenderer(gl, quad) {
   const captureShader = new Program(gl, VERTEX, CAPTURE, 'capture');
-  const readoutShader = new Program(gl, VERTEX, READOUT_SOURCE, 'readout');
+  const readoutShader = new Program(gl, VERTEX, READOUT, 'readout');
   const ring = new Ring(gl);
 
   // --- the ring ----------------------------------------------------------
