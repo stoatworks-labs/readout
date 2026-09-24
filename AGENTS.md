@@ -334,12 +334,10 @@ The brief said to decide and write it down.
 - **The default clip is the geometry card.** Its straight lines are what the jello
   bends, and its rotating spoke is the propeller photograph — the one rolling-shutter
   effect that needs no code at all, only content that happens to be turning.
-- **`sync.sh` does not know this repo.** The kit master is
-  `stoatworks-backend/resolume-demo/`, and its `repos=(…)` array does not list
-  `readout`, so a bare `./sync.sh` skips it silently. Re-vendor with the repo named:
-  `./sync.sh readout`, and check the output says `synced readout` rather than
-  `skip readout (no demo/)`. Adding it to that array is a change in the backend repo
-  and belongs there.
+- **`sync.sh` lists this repo.** The kit master is
+  `stoatworks-backend/resolume-demo/`, and `readout` is in its `repos=(…)` array, so
+  a bare `./sync.sh` re-vendors it and `./sync.sh --check` checks it. `./sync.sh
+  readout` does just this one; check the output says `synced readout`.
 
 ---
 
@@ -437,7 +435,8 @@ instantiation is the diag log rather than the clip's effect list.
   Arena.
 - **No long session, no composition save or reload, and no preset recall in the host**
   were exercised on Windows.
-- **No OpenFX port and no browser demo.** Not required for 0.1.0.
+- **No OpenFX port.** Not required for 0.1.0. The browser demo came later; see
+  *The browser demo* above.
 - **No factory presets**, and therefore none of the preset/host-echo machinery the rest
   of the fleet carries.
 - **`ATTRIBUTIONS.md` is still a provisional hand copy**, in the shape the
