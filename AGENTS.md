@@ -154,6 +154,26 @@ treated as opaque. Tiles are off — the shake samples up to 6% of the frame awa
 is no `isIdentity`: a still picture comes back unchanged anyway, and the plugin cannot
 know a clip is still without fetching it.
 
+**Fusion reports no frame rate; there, time-based controls assume 24 fps.** Found by the
+lead in DaVinci Resolve Studio 21.1 (2026-10-03): Resolve's Fusion page sets
+`kOfxImageEffectPropFrameRate` on neither the effect nor any clip, reports every clip's
+`kOfxImageEffectPropFrameRange` as [0, 0], and leaves out the unmapped rate and range
+and the two render-status properties. The Support library turns a missing property
+into an exception, so the first build's unguarded `getFrameRate()` failed every render
+with `kOfxStatErrMissingHostFeature` and Fusion said only that the composition "could
+not be processed". Now `frameRate()` tries the output clip, the source clip and the
+effect, each inside its own `try`, takes the first positive finite answer, and falls
+back to 24 (`kFallbackFrameRate`, Resolve's default timeline rate). Readout Time,
+Exposure, the shake, the mains flicker and Fire At are all in seconds, so in Fusion they
+are right only on a 24 fps composition — the plugin description says so.
+
+**A frame range with no length is unknown, not one frame long.** `clipStart()` believes
+the source clip's range only when its end is past its start; Fusion's [0, 0] means "try
+the fetch", and a frame the host has not got still comes back as no image, which stops
+the history exactly as the range would have. A fetch that throws rather than returning
+no image is treated the same way, and so is a premultiplication state the host will not
+give (premultiplied, as for an opaque clip).
+
 **The Trigger list differs between builds** — Off, Once, Interval here; Off, Beat, Bar,
 Onset, Interval in Resolume. Nothing crosses between them by index: there are no
 factory presets. If presets arrive, they must not cover Trigger.
@@ -554,6 +574,25 @@ image sequences, `--time`, `--frame-rate`, `--batch`, `--frames-needed` and
   (which also loads the frames), on the test host's 8 threads (it caps there; this
   machine has 16 cores): **3.6 ms** at the defaults, 5.9 ms at the longest window,
   8.7 ms with shake, 12.9 ms with shake, the longest window, mains and Interval.
+- **Fusion, imitated (2026-10-04).** The test host's `--quirks fusion` removes
+  `kOfxImageEffectPropFrameRate` from the effect and every clip, reports every clip's
+  frame range as [0, 0], and drops the unmapped pair and the render-status arguments —
+  what Resolve 21.1's Fusion page does. The build before the fix (`922e6e6`) fails
+  there with `kOfxStatErrMissingHostFeature`, as it did in Resolve; this one renders.
+  Under the quirk, five configurations (defaults, the longest window, shake with mains,
+  a Fire At flash, Hold read left to right) × eight frames of the 30-frame card are
+  **byte-identical** to the normal host at `--frame-rate 24`; at frame 15 the plugin
+  asks for 14–15 at the defaults and 12–15 at the longest window; and on frames 80, 84
+  and 89 of a 90-frame card the same five agree with the FFGL build at 24 fps to
+  **worst 1/255** (the Fire At flash lights frame 84 in both). The FFGL harness starts
+  its measured frame period at 1/60 and needs ~80 frames to settle at 24, which is why
+  those frames are late ones; earlier frames differ by tens of levels for that reason
+  alone. A clip numbered 1001–1030, rendered at 1015 under the quirk, is identical to
+  the normal host. Against a render of the current frame alone (Global, no exposure)
+  the longest-window quirk render differs by 210/255 — it reached back.
+- **Nothing else moved.** After the fix, the 65 OpenFX frames of the normal-host
+  comparison above are byte-identical to the build before it, and the determinism
+  hashes are unchanged.
 - **The bundle**: universal, exports `_OfxGetPlugin`, plist names `Readout.ofx`,
   identifier `com.stoatworks.readout.ofx`, ad-hoc signs; `ofxprobe` loads it from this
   build, sees every control and no audio, leaves a still picture untouched at the
@@ -586,12 +625,13 @@ unpremultiplied, RGB and proxy paths are written but unexercised.
   never been put in front of Arena.
 - **No long session, no composition save or reload, and no preset recall in the host**
   were exercised on Windows.
-- ☠️ **The OpenFX build has never been loaded into a real OpenFX host** — not Resolve,
-  Vegas, Nuke or Natron, on any platform. Everything known about it is from the fleet's
-  probe hosts and the harness; see *The OpenFX build* under "Verified" above. In
-  particular nobody has seen how a real host answers `getFrameRange` at a clip's head,
-  whether it honours `getFramesNeeded`, or how Resolve shows a keyframeable seconds
-  parameter like Fire At. It is unreleased: it ships with the next tag.
+- ☠️ **The OpenFX build has been in one real host, and failed there.** The lead loaded
+  it into DaVinci Resolve Studio 21.1 as a Fusion tool and the render failed on the
+  missing frame rate (see *The OpenFX build* above). The fix is checked only under the
+  test host's Fusion imitation; it has **not been re-run in Resolve**, and nothing has
+  rendered it on Resolve's Edit or Color page, in Vegas, Nuke or Natron. Nobody has seen
+  whether a real host honours `getFramesNeeded`, or how Resolve shows a keyframeable
+  seconds parameter like Fire At. It is unreleased: it ships with the next tag.
 - **No factory presets**, and therefore none of the preset/host-echo machinery the rest
   of the fleet carries.
 - **`ATTRIBUTIONS.md` is still a provisional hand copy**, in the shape the

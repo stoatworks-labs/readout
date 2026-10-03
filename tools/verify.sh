@@ -367,6 +367,75 @@ PROBE_PY
 		else
 			printf '   skipped: ofxprobe not built at %s\n' "$OFXPROBE"
 		fi
+
+		#-------------------------------------------------------------------
+		# Resolve's Fusion page, imitated.
+		#
+		# Fusion gives an OpenFX plugin no frame rate at all and reports every
+		# clip's frame range as [0, 0]. The first build read the rate unguarded
+		# and every Fusion render failed. A test host with `--quirks fusion`
+		# presents the properties Fusion's way; it is scratch tooling outside
+		# this repo, so the step runs only where one is found -- $OFXHOST, or an
+		# ofxprobe whose --help lists --quirks -- and skips otherwise.
+		#
+		# A bar moving across 12 frames, rendered at frame 10 with the longest
+		# window: under the quirk it must render, ask for frames 7..10, equal the
+		# normal host at 24 fps byte for byte (the fallback rate), and differ from
+		# a Global render that reads only the current frame -- so the window still
+		# reaches back past the [0, 0] range.
+		#-------------------------------------------------------------------
+		step "openfx under Fusion's quirks"
+		QUIRKHOST=""
+		for candidate in "${OFXHOST:-}" "$OFXPROBE"; do
+			[ -n "$candidate" ] && [ -x "$candidate" ] || continue
+			case "$("$candidate" --help 2>&1)" in
+				*--quirks*) QUIRKHOST="$candidate"; break ;;
+			esac
+		done
+		if [ -z "$QUIRKHOST" ]; then
+			printf '   skipped: no test host with --quirks fusion (set OFXHOST to one)\n'
+		else
+			qdir=$(mktemp -d)
+			python3 - "$qdir" <<'QUIRK_PY'
+import sys, pathlib
+out = pathlib.Path( sys.argv[ 1 ] )
+w, h = 160, 90
+for f in range( 12 ):
+	rows = bytearray()
+	for y in range( h ):
+		for x in range( w ):
+			on = 10 + 9 * f <= x < 16 + 9 * f
+			rows += bytes( ( 240, 240, 240 ) if on else ( 60, 70, 110 ) )
+	( out / ( "f%04d.ppm" % f ) ).write_bytes( b"P6\n%d %d\n255\n" % ( w, h ) + bytes( rows ) )
+QUIRK_PY
+			qbase=( --no-system-dirs --dir "$BUILD" --render "$OFX_ID" --seq "$qdir/f%04d.ppm" --time 10 )
+			qwin=( --set readoutTime=1 --set exposure=1 )
+			quirk=$("$QUIRKHOST" "${qbase[@]}" --quirks fusion --frames-needed "${qwin[@]}" --out-only "$qdir/q.ppm" 2>&1)
+			qstatus=$?
+			"$QUIRKHOST" "${qbase[@]}" --frame-rate 24 "${qwin[@]}" --out-only "$qdir/n.ppm" >/dev/null 2>&1
+			"$QUIRKHOST" "${qbase[@]}" --quirks fusion --set global=1 --set exposure=0 --out-only "$qdir/g.ppm" >/dev/null 2>&1
+			if [ "$qstatus" -ne 0 ] || [ ! -s "$qdir/q.ppm" ]; then
+				fail "does not render under --quirks fusion -- the Fusion failure"
+				printf '%s\n' "$quirk" | tail -5 | sed 's/^/      /'
+			else
+				pass "renders with no frame rate and a [0, 0] frame range"
+				case "$quirk" in
+					*"[7, 10]"*) pass "asks for frames 7..10 at the 24 fps fallback" ;;
+					*) fail "frames needed under the quirk are not 7..10"; printf '%s\n' "$quirk" | grep -i needed | sed 's/^/      /' ;;
+				esac
+				if cmp -s "$qdir/q.ppm" "$qdir/n.ppm"; then
+					pass "byte-identical to the normal host at 24 fps"
+				else
+					fail "differs from the normal host at 24 fps -- the fallback is not 24, or the window collapsed"
+				fi
+				if [ -s "$qdir/g.ppm" ] && ! cmp -s "$qdir/q.ppm" "$qdir/g.ppm"; then
+					pass "reads earlier frames: differs from a render of the current frame alone"
+				else
+					fail "identical to a render of the current frame alone -- the window did not reach back"
+				fi
+			fi
+			rm -rf "$qdir"
+		fi
 	fi
 fi
 

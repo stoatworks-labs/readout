@@ -63,6 +63,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -99,7 +100,15 @@ constexpr const char* kPluginDescription =
 	"and Onset triggers are not here: OpenFX gives a plugin no audio and no "
 	"transport. Its Fire button becomes Trigger: Once, at the time Fire At "
 	"names.\n\n"
+	"Fusion reports no frame rate; there, time-based controls assume 24 fps. "
+	"Readout Time, Exposure, the shake, the mains flicker and Fire At are all in "
+	"seconds, so they are right only on a 24 fps composition.\n\n"
 	"https://stoatworks-labs.com";
+
+/// The frame rate when the host will not say. Resolve's Fusion page reports
+/// none at all -- not on the effect, not on any clip -- and 24 is Resolve's
+/// default timeline rate.
+constexpr double kFallbackFrameRate = 24.0;
 
 constexpr const char* kParamReadout       = "readoutTime";
 constexpr const char* kParamExposure      = "exposure";
@@ -363,12 +372,68 @@ public:
 private:
 	/// Frames per second of the timeline this effect is rendering on. OFX time
 	/// is in frames, and everything in the model is in seconds.
+	///
+	/// Every read is guarded on its own. Resolve's Fusion page provides no
+	/// frame rate anywhere, and the Support library turns the missing property
+	/// into an exception -- which, uncaught, fails the whole render with
+	/// kOfxStatErrMissingHostFeature and Fusion reports only that the
+	/// composition "could not be processed". The first positive, finite answer
+	/// wins; with none, kFallbackFrameRate.
 	double frameRate() const
 	{
-		double fps = dstClip->getFrameRate();
-		if( !( fps > 0.0 ) )
-			fps = srcClip->getFrameRate();
-		return fps > 0.0 ? fps : 24.0;
+		const auto guarded = []( auto&& read ) {
+			try
+			{
+				const double value = read();
+				return std::isfinite( value ) && value > 0.0 ? value : 0.0;
+			}
+			catch( ... )
+			{
+				return 0.0;
+			}
+		};
+
+		for( const double fps : { guarded( [ this ] { return dstClip->getFrameRate(); } ),
+		                          guarded( [ this ] { return srcClip->getFrameRate(); } ),
+		                          guarded( [ this ] { return getFrameRate(); } ) } )
+			if( fps > 0.0 )
+				return fps;
+		return kFallbackFrameRate;
+	}
+
+	/// The first frame the source clip has, or minus infinity when the host
+	/// cannot be believed about it. Fusion reports [0, 0] for every clip, and
+	/// taking that at its word would put every frame before t = 0 out of the
+	/// clip -- and, on a host that also numbered from 0, would leave the
+	/// readout nothing but the current frame. A range with no length is
+	/// therefore "unknown": the fetch is tried, and a frame the host has not
+	/// got comes back as no image, which stops the history just the same.
+	double clipStart() const
+	{
+		try
+		{
+			const OfxRangeD range = srcClip->getFrameRange();
+			if( std::isfinite( range.min ) && std::isfinite( range.max ) && range.max > range.min )
+				return range.min;
+		}
+		catch( ... )
+		{
+		}
+		return -std::numeric_limits< double >::infinity();
+	}
+
+	/// Whether the source is premultiplied. Unknown counts as premultiplied --
+	/// the same answer the model gives an opaque or RGB clip.
+	bool sourcePremultiplied() const
+	{
+		try
+		{
+			return srcClip->getPreMultiplication() != OFX::eImageUnPreMultiplied;
+		}
+		catch( ... )
+		{
+			return true;
+		}
 	}
 
 	sensor::Settings settingsAt( double t ) const
@@ -424,25 +489,35 @@ private:
 		//exist. Treating it as premultiplied is what makes the round trip an
 		//identity there.
 		History< PIX, nComponents, maxValue > history;
-		history.premultiplied = nComponents != 4 || srcClip->getPreMultiplication() != OFX::eImageUnPreMultiplied;
+		history.premultiplied = nComponents != 4 || sourcePremultiplied();
 		history.layers[ 0 ].base     = static_cast< const unsigned char* >( src.getPixelData() );
 		history.layers[ 0 ].rowBytes = src.getRowBytes();
 		history.count                = 1;
 
 		//Ring age k is the source at t - k. Stop at the first frame the clip
-		//has not got -- before its start, refused, or a different shape -- and
-		//every older age then reads the oldest frame there is, as the FFGL ring
-		//does while it fills.
+		//has not got -- before its start, refused, failed, or a different
+		//shape -- and every older age then reads the oldest frame that did come
+		//back, as the FFGL ring does while it fills. See clipStart for why the
+		//clip's range is only a hint.
 		const int oldest       = sensor::oldestAge( s, fps );
-		const OfxRangeD range  = srcClip->getFrameRange();
+		const double firstFrame = clipStart();
 		std::vector< std::unique_ptr< OFX::Image > > past;
 		for( int k = 1; k <= oldest; ++k )
 		{
 			const double when = t - static_cast< double >( k );
-			if( when < range.min - 1e-6 )
+			if( when < firstFrame - 1e-6 )
 				break;
 
-			std::unique_ptr< OFX::Image > image( srcClip->fetchImage( when ) );
+			std::unique_ptr< OFX::Image > image;
+			try
+			{
+				image.reset( srcClip->fetchImage( when ) );
+			}
+			catch( ... )
+			{
+				//A host that answers a fetch with an error rather than with no
+				//image has still said it has no frame there.
+			}
 			if( !image )
 				break;
 

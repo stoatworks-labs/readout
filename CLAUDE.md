@@ -56,6 +56,8 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Global on returns the input bit-exactly: `./build/rotest --global`
 - A shake at f wobbles at `1/f / T_read`: `./build/rotest --jello`
 - The OpenFX build's CPU readout matches the GPU frame for frame: `./build/rotest --mirror`
+- Resolve's Fusion page, imitated: `OFXHOST=<a test host with --quirks fusion> tools/verify.sh`
+  — the step skips when no such host is found (the bridge's stock ofxprobe has none)
 - No dead controls: `python3 tools/sweep.py` (`--size WxH`, `--jobs N`)
 - Render cost: `./build/rotest --bench`
 - What a host sees: `../oxbow/build/oxbow probe build-universal/Readout.bundle`
@@ -73,6 +75,11 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
   `ReadoutOFX.cpp`. The ring there is temporal clip access, `t` back to
   `t - sensor::oldestAge`, never more than 16 frames. No audio, Beat, Bar, Onset or
   Fire button; Trigger is Off/Once/Interval anchored at Fire At (seconds).
+- **Never read a host property unguarded in `ReadoutOFX.cpp`.** Resolve's Fusion page
+  has no frame rate at all (the Support library throws, the render fails) and reports
+  every frame range as [0, 0]. `frameRate()` falls back to 24; `clipStart()` treats a
+  zero-length range as unknown. Fusion reports no frame rate; there, time-based controls
+  assume 24 fps.
 - **Time in the shader is `tau`: seconds BEFORE this frame's timestamp**, never
   absolute. Resolume's clock has been seen at 499,217 s, where a float resolves to
   0.03 s — three whole readouts. Phases are reduced into 0..2π on the CPU, in double.
@@ -102,8 +109,9 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
   registered, loaded and instantiated in Arena 7.27.1 on Windows on 2026-09-21, on Mesa
   llvmpipe, with the shaders compiling — no GPU, and nothing timed there. Everything
   numeric is still measured offline on macOS, plus an `oxbow` load. No user guide.
-- **The OpenFX build has never been loaded into Resolve, Vegas, Nuke or Natron** — only
-  into the fleet's probe hosts. It is on `main` but unreleased until the next tag.
+- **The OpenFX build failed in Resolve 21.1's Fusion page** (no frame rate there). Fixed
+  and checked under the test host's Fusion imitation, **not yet re-run in Resolve**;
+  never loaded in Vegas, Nuke or Natron. On `main` but unreleased until the next tag.
 - The **project video** is up (`1dYEzeCZF1Y`). Its scripts live in
   `stoatworks-backend/video/projects/readout` and its footage is `rotest --pipe` on
   Resolume's demo clips — nothing in it was recorded off a screen, and nothing in it
