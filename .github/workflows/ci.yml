@@ -3,7 +3,9 @@ name: ci
 # Both platforms on every push and pull request, so a Dependabot bump has a
 # status check to gate on and a GLEW-shaped break -- which macOS is
 # structurally blind to, because macOS never links GLEW -- is caught before a
-# tag. There is no Linux job: the CMakeLists branches on APPLE and WIN32.
+# tag. Both build the OpenFX plugin alongside the FFGL one: it is a default
+# target. There is no Linux job here; the release workflow builds and
+# load-tests the Linux OpenFX plugin in the containers that matter.
 on:
   push:
     branches: [main]
@@ -54,6 +56,7 @@ jobs:
           ./build/rotest --band    --size 320x180
           ./build/rotest --flicker --size 320x180
           ./build/rotest --jello   --size 320x180
+          ./build/rotest --mirror  --size 320x180
 
       - name: Controls
         # At 160x90 and two at a time, because the runner has no GPU and the
@@ -62,9 +65,27 @@ jobs:
         timeout-minutes: 25
         run: python3 tools/sweep.py --size 160x90 --jobs 2
 
+      - name: OpenFX bundle
+        # The checks the release job makes, made here so a pull request finds
+        # them first: the plist names the binary on disk (codesign refuses
+        # otherwise, and only codesign notices) and the binary exports the
+        # entry point a host resolves by name. Captured and matched with
+        # `case`, never `nm | grep -q`, which SIGPIPEs under pipefail.
+        run: |
+          bundle=build/Readout.ofx.bundle
+          exe=$( /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$bundle/Contents/Info.plist" )
+          test -f "$bundle/Contents/MacOS/$exe"
+          symbols=$( nm -gU "$bundle/Contents/MacOS/$exe" )
+          case "$symbols" in
+            *_OfxGetPlugin*) echo "exports _OfxGetPlugin" ;;
+            *) echo "no _OfxGetPlugin export"; exit 1 ;;
+          esac
+          codesign --force --sign - --timestamp=none "$bundle"
+
       - uses: actions/upload-artifact@v7
         with:
           name: readout-macos-arm64
+          # Both bundles: *.bundle matches Readout.ofx.bundle as well.
           path: build/*.bundle
           if-no-files-found: error
 
@@ -88,6 +109,10 @@ jobs:
 
       - name: Build
         run: cmake --build build --config Release --parallel
+
+      - name: OpenFX bundle
+        shell: bash
+        run: test -f build/Readout.ofx.bundle/Contents/Win64/Readout.ofx
 
       - uses: actions/upload-artifact@v7
         with:

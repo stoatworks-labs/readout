@@ -24,6 +24,9 @@
 #                 frame apart.
 #   --jello       a sinusoidal shake wobbles the rows with the period and the
 #                 amplitude the closed form gives.
+#   --mirror      the OpenFX build's CPU readout -- a second copy of the
+#                 readout shader, fed by a memoryless route to its uniforms --
+#                 matches the GPU frame for frame, with a negative control.
 #   sweep         does every control change the picture. A GLSL uniform whose
 #                 name does not match the C++ is ignored without a word, and
 #                 this is the only thing standing between a typo and a shipped
@@ -38,8 +41,13 @@
 #   oxbow         a real FFGL host loads the bundle and reports the name, id
 #                 and type it sees -- the name field is not null-terminated
 #                 and a host truncates silently past 16 characters.
+#   openfx        the OpenFX bundle: its plist names the binary on disk, it is
+#                 universal, exports OfxGetPlugin, ad-hoc signs, and ofxprobe
+#                 loads it, sees the identity and controls it should, and
+#                 renders -- leaving a still picture alone, as a rolling
+#                 shutter must, and changing it once the mains light is on.
 #
-# The last five are release-job work done locally on purpose. A check that
+# The last six are release-job work done locally on purpose. A check that
 # only runs in CI, after a tag, is a check that catches you after the tag.
 #
 set -uo pipefail
@@ -168,7 +176,7 @@ fi
 ROTEST="$BUILD/rotest"
 
 step "physics"
-for check in global skew band flicker jello; do
+for check in global skew band flicker jello mirror; do
 	if out=$("$ROTEST" --$check 2>&1); then
 		pass "rotest --$check: $( printf '%s\n' "$out" | grep -v '^$' | tail -1 )"
 	else
@@ -249,6 +257,116 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 		esac
 	else
 		printf '   skipped: oxbow not built at %s\n' "$OXBOW"
+	fi
+fi
+
+#---------------------------------------------------------------------------
+# The OpenFX bundle.
+#
+# cmake/InfoOFX.plist.in is one of the files copied from repo to repo, and the
+# copy the fleet started from had the PREVIOUS plugin's name hardcoded into
+# CFBundleExecutable. Nothing fails until the release job's codesign, after
+# the tag, with a message that never mentions the plist. So the plist is
+# checked against the binary and the exact codesign is run, on a copy.
+#
+# ofxprobe renders one frame at time 0 of a still ramp. A rolling shutter
+# cannot see a still picture, so at the defaults the output MUST be the input
+# -- and with the mains light on it must not be, which is what shows the
+# render ran at all.
+#---------------------------------------------------------------------------
+OFX_BUNDLE="$BUILD/Readout.ofx.bundle"
+OFX_ID="com.stoatworks.readout"
+
+if [ "$(uname)" = "Darwin" ]; then
+	step "openfx"
+	if [ ! -d "$OFX_BUNDLE" ]; then
+		fail "no OpenFX bundle at $OFX_BUNDLE -- configure without -DBUILD_OFX=OFF"
+	else
+		ofxExe=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$OFX_BUNDLE/Contents/Info.plist" 2>/dev/null)
+		ofxIdent=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$OFX_BUNDLE/Contents/Info.plist" 2>/dev/null)
+		OFX_BIN="$OFX_BUNDLE/Contents/MacOS/$ofxExe"
+		if [ -n "$ofxExe" ] && [ -f "$OFX_BIN" ]; then
+			pass "CFBundleExecutable ($ofxExe) is on disk"
+		else
+			fail "CFBundleExecutable is '$ofxExe' but no such binary exists -- codesign will fail after the tag"
+		fi
+		if [ "$ofxIdent" = "$OFX_ID.ofx" ]; then
+			pass "CFBundleIdentifier is $ofxIdent"
+		else
+			fail "CFBundleIdentifier is '$ofxIdent'"
+		fi
+
+		archs=$(lipo -archs "$OFX_BIN" 2>/dev/null)
+		case "$archs" in *arm64*) pass "arm64 present" ;; *) fail "no arm64 in the OpenFX binary (got: $archs)" ;; esac
+		case "$archs" in *x86_64*) pass "x86_64 present" ;; *) fail "no x86_64 in the OpenFX binary (got: $archs)" ;; esac
+
+		syms=$(nm -gU "$OFX_BIN" 2>/dev/null)
+		case "$syms" in
+			*_OfxGetPlugin*) pass "exports OfxGetPlugin" ;;
+			*) fail "no OfxGetPlugin -- a host will find no plugin in the bundle" ;;
+		esac
+
+		tmp=$(mktemp -d)
+		cp -R "$OFX_BUNDLE" "$tmp/" 2>/dev/null
+		if codesign --force --sign - --timestamp=none "$tmp/Readout.ofx.bundle" >/dev/null 2>&1; then
+			pass "ad-hoc signs (the command the release job runs)"
+		else
+			fail "the OpenFX bundle will not ad-hoc sign"
+		fi
+		rm -rf "$tmp"
+
+		OFXPROBE="${OFXPROBE:-../resolume-ofx-bridge/build/ofxprobe}"
+		[ -x "$OFXPROBE" ] || OFXPROBE="$HOME/Projects/resolume/resolume-ofx-bridge/build/ofxprobe"
+		if [ -x "$OFXPROBE" ]; then
+			# ofxprobe ADDS --dir to the standard scan, and the first bundle with a
+			# matching identifier wins -- so an installed copy in /Library/OFX/Plugins
+			# would be tested instead of this build. The manifest says which.
+			manifest=$(mktemp)
+			"$OFXPROBE" --dir "$BUILD" --json >"$manifest" 2>/dev/null
+			if python3 - "$OFX_ID" "$OFX_BUNDLE" "$manifest" <<'PROBE_PY'
+import json, os, sys
+want, bundle = sys.argv[ 1 ], os.path.realpath( sys.argv[ 2 ] )
+data = json.load( open( sys.argv[ 3 ] ) )
+plugins = data if isinstance( data, list ) else data.get( "plugins", [ data ] )
+mine = [ p for p in plugins if p.get( "identifier" ) == want ]
+if not mine:
+	sys.exit( "no plugin with identifier " + want )
+p = mine[ 0 ]
+if os.path.realpath( p.get( "bundlePath", "" ) ) != bundle:
+	sys.exit( "the probe found " + want + " at " + p.get( "bundlePath", "?" ) + ", not in this build" )
+names = { q[ "name" ] for q in p[ "params" ] }
+missing = { "readoutTime", "exposure", "direction", "interpolation", "global", "amount", "frequency",
+            "rotation", "trigger", "fireAt", "interval", "length", "phase", "level", "colour", "mains",
+            "depth", "mix" } - names
+audio = [ n for n in names if "audio" in n.lower() or n.lower() == "fire" ]
+if p.get( "label" ) != "Readout" or p.get( "grouping" ) != "Stoatworks":
+	sys.exit( "label/grouping is %r/%r" % ( p.get( "label" ), p.get( "grouping" ) ) )
+if missing:
+	sys.exit( "controls missing: " + ", ".join( sorted( missing ) ) )
+if audio:
+	sys.exit( "FFGL-only controls declared: " + ", ".join( sorted( audio ) ) )
+PROBE_PY
+			then
+				pass "ofxprobe sees Readout / Stoatworks from this build, every control, and no audio"
+			else
+				fail "ofxprobe's manifest is wrong -- see: $OFXPROBE --dir $BUILD --json"
+			fi
+			rm -f "$manifest"
+
+			still=$("$OFXPROBE" --dir "$BUILD" --render "$OFX_ID" --size 640x360 2>&1)
+			lit=$("$OFXPROBE" --dir "$BUILD" --render "$OFX_ID" --size 640x360 --set mains=1 --set depth=0.8 2>&1)
+			case "$still" in
+				*" 0 of "*" bytes differ"*) pass "renders a still picture untouched at the defaults" ;;
+				*) fail "the defaults changed a still picture"; printf '%s\n' "$still" | sed 's/^/      /' ;;
+			esac
+			changed=$(printf '%s\n' "$lit" | grep -oE '[0-9]+ of [0-9]+ bytes differ')
+			case "$changed" in
+				""|"0 of "*) fail "Mains on did not change the picture"; printf '%s\n' "$lit" | sed 's/^/      /' ;;
+				*) pass "Mains on changes it ($changed)" ;;
+			esac
+		else
+			printf '   skipped: ofxprobe not built at %s\n' "$OFXPROBE"
+		fi
 	fi
 fi
 

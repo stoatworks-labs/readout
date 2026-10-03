@@ -15,6 +15,7 @@
 		rotest --flicker                mains bands sit T_light / T_read of the frame apart
 		rotest --global                 Global on returns the input bit-exactly
 		rotest --jello                  a sinusoidal shake wobbles at 1/f / T_read of the frame
+		rotest --mirror                 the OpenFX build's CPU readout matches this GPU one
 		rotest --bench                  the render cost
 		rotest --pipe                   raw frames in, raw frames out
 
@@ -35,6 +36,7 @@
 
 #include "Controls.h"
 #include "Readout.h"
+#include "Sensor.h"
 
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
@@ -996,6 +998,279 @@ int runJello( int width, int height )
 }
 
 //---------------------------------------------------------------------------
+// --mirror
+//
+// The OpenFX build has no GPU. It renders through sensor::readoutPixel -- a
+// C++ copy of kReadoutShader's main -- and it has no memory either, so it
+// decides its uniforms through sensor::uniformsAt and sensor::scheduledPulses
+// rather than through ProcessOpenGL's clock, flash list and ring. Two
+// copies of a shader and two routes to its uniforms is exactly the
+// arrangement that drifts without anybody seeing it, so this renders the
+// same frames both ways -- the real plugin on the GPU, and the OpenFX
+// build's arithmetic on the CPU -- and compares every frame of the run,
+// including the first ones, where the ring is still filling.
+//
+// The negative control renders the CPU side with a different Readout Time
+// and must disagree, so the comparison is shown able to fail.
+//---------------------------------------------------------------------------
+
+/// The ring, as the CPU side sees it: every frame rendered so far, top row
+/// first, newest last. Ages count back from `newest`.
+struct CpuRing
+{
+	const std::vector< std::vector< unsigned char > >* frames = nullptr;
+	int newest = 0;
+	int width  = 0;
+	int height = 0;
+
+	void texel( int age, int x, int y, float rgba[ 4 ] ) const
+	{
+		const std::vector< unsigned char >& frame = ( *frames )[ static_cast< size_t >( newest - age ) ];
+		//Row 0 is the BOTTOM for the model, as it is for GL; these are top-first.
+		const unsigned char* p = frame.data() + ( static_cast< size_t >( height - 1 - y ) * width + x ) * 4;
+		for( int c = 0; c < 4; ++c )
+			rgba[ c ] = static_cast< float >( p[ c ] ) / 255.0f;
+	}
+};
+
+/// The controls the OpenFX build has, read off the FFGL plugin by name.
+sensor::Settings settingsOf( Readout& plugin )
+{
+	const auto value = [ &plugin ]( const char* name ) {
+		return plugin.GetFloatParameter( static_cast< unsigned int >( indexOfParameter( plugin, name ) ) );
+	};
+
+	sensor::Settings s;
+	s.readout       = value( "Readout Time" );
+	s.exposure      = value( "Exposure" );
+	s.direction     = value( "Direction" );
+	s.interpolation = value( "Interpolation" );
+	s.global        = value( "Global" );
+	s.amount        = value( "Amount" );
+	s.frequency     = value( "Frequency" );
+	s.rotation      = value( "Rotation" );
+	s.interval      = value( "Interval" );
+	s.length        = value( "Length" );
+	s.phase         = value( "Phase" );
+	s.level         = value( "Level" );
+	s.colour        = value( "Colour" );
+	s.mains         = value( "Mains" );
+	s.depth         = value( "Depth" );
+	s.mix           = value( "Mix" );
+	return s;
+}
+
+/// One frame of the CPU readout, top row first, quantised the way the GPU's
+/// RGBA8 framebuffer quantises.
+std::vector< unsigned char > cpuReadout( const sensor::Uniforms& u, const CpuRing& ring )
+{
+	std::vector< unsigned char > out( static_cast< size_t >( u.width ) * u.height * 4 );
+	for( int y = 0; y < u.height; ++y )
+	{
+		unsigned char* row = out.data() + static_cast< size_t >( u.height - 1 - y ) * u.width * 4;
+		for( int x = 0; x < u.width; ++x )
+		{
+			float rgba[ 4 ];
+			sensor::readoutPixel( u, x, y, ring, rgba );
+			for( int c = 0; c < 4; ++c )
+				row[ x * 4 + c ] = static_cast< unsigned char >( std::lround( std::clamp( rgba[ c ], 0.0f, 1.0f ) * 255.0f ) );
+		}
+	}
+	return out;
+}
+
+struct MirrorCase
+{
+	const char* name;
+	std::vector< std::pair< const char*, float > > settings;
+	sensor::Schedule schedule = sensor::Schedule::Off;
+	int fireFrame             = -1;  ///< Once: the frame Fire is pressed on
+	bool bar                  = false;///< the --skew bar rather than the card
+};
+
+struct MirrorResult
+{
+	int worst        = 0;
+	long differing   = 0;///< pixels with any channel off by more than nothing
+	long pixels      = 0;
+	long edgeFlips   = 0;///< in/out of the picture decided differently, on the edge
+	long strayFlips  = 0;///< ... decided differently anywhere else: a real fault
+	double leanFirst = -1.0;///< bar cases: last frame's first and last row centroids, CPU side
+	double leanLast  = -1.0;
+};
+
+bool runMirrorCase( const MirrorCase& c, int width, int height, int frames, float readoutOverride,
+                    MirrorResult& result )
+{
+	const double fps = 60.0;
+
+	Session session;
+	Readout& p = session.plugin;
+	for( const auto& setting : c.settings )
+		if( !set( p, setting.first, setting.second ) )
+			return false;
+	if( c.schedule == sensor::Schedule::Interval )
+		set( p, "Trigger", static_cast< float >( Readout::kTriggerInterval ) );
+	session.fireFrame = c.fireFrame;
+
+	sensor::Settings s = settingsOf( p );
+	if( readoutOverride >= 0.0f )
+		s.readout = readoutOverride;
+
+	if( !session.begin( width, height ) )
+		return false;
+
+	std::vector< std::vector< unsigned char > > history;
+	for( int frame = 0; frame < frames; ++frame )
+	{
+		history.push_back( c.bar ? buildBar( width, height, frame, 0.15f * width, 24.0f, 8 )
+		                         : buildCard( width, height, frame ) );
+		if( !session.render( frame, history.back() ) )
+			return false;
+		const std::vector< unsigned char > gpu = session.readBack();
+
+		//The CPU side: what the OpenFX build would do with frame `frame` and
+		//the frames before it, knowing nothing else.
+		const double now = static_cast< double >( frame ) / fps;
+		sensor::Pulse pulses[ sensor::kMaxFlashes ];
+		const double start = c.schedule == sensor::Schedule::Once ? static_cast< double >( c.fireFrame ) / fps : 0.0;
+		const int count    = sensor::scheduledPulses( s, c.schedule, start, fps, now, pulses );
+
+		CpuRing ring;
+		ring.frames = &history;
+		ring.newest = frame;
+		ring.width  = width;
+		ring.height = height;
+		const sensor::Uniforms u = sensor::uniformsAt( s, now, fps, width, height, frame + 1, pulses, count );
+		const std::vector< unsigned char > cpu = cpuReadout( u, ring );
+
+		//Every source here is opaque, so the only transparent output is the
+		//shader's "outside the picture" branch. A shaken frame's edge is a
+		//sample point landing exactly on 0 or 1 somewhere along it, and there
+		//float rounding -- the GPU's sin and FMA against libm's -- can put the
+		//two sides of one comparison either way: transparent black on one,
+		//the edge texel on the other. That is a disagreement about which side
+		//of a line a point within 1e-7 of it lies, so it is counted apart --
+		//but ONLY where the GPU's own picture has an edge there. A flip
+		//anywhere else is a fault, and fails.
+		const auto alpha = [ & ]( const std::vector< unsigned char >& image, int x, int y ) {
+			return image[ ( static_cast< size_t >( y ) * width + x ) * 4 + 3 ];
+		};
+		for( int y = 0; y < height; ++y )
+		{
+			for( int x = 0; x < width; ++x )
+			{
+				const size_t i = ( static_cast< size_t >( y ) * width + x ) * 4;
+				int off        = 0;
+				for( int k = 0; k < 4; ++k )
+					off = std::max( off, std::abs( static_cast< int >( gpu[ i + k ] ) - static_cast< int >( cpu[ i + k ] ) ) );
+				++result.pixels;
+				if( off == 0 )
+					continue;
+				++result.differing;
+
+				if( ( gpu[ i + 3 ] == 0 ) != ( cpu[ i + 3 ] == 0 ) )
+				{
+					const unsigned char here = alpha( gpu, x, y );
+					bool edge                = false;
+					for( int dy = -1; dy <= 1 && !edge; ++dy )
+						for( int dx = -1; dx <= 1 && !edge; ++dx )
+						{
+							const int nx = x + dx, ny = y + dy;
+							if( nx >= 0 && nx < width && ny >= 0 && ny < height
+							    && ( alpha( gpu, nx, ny ) == 0 ) != ( here == 0 ) )
+								edge = true;
+						}
+					if( edge )
+					{
+						++result.edgeFlips;
+						continue;
+					}
+					++result.strayFlips;
+				}
+				result.worst = std::max( result.worst, off );
+			}
+		}
+
+		if( c.bar && frame == frames - 1 )
+		{
+			result.leanFirst = rowCentroid( cpu, width, 0 );
+			result.leanLast  = rowCentroid( cpu, width, height - 1 );
+		}
+	}
+	session.end();
+	return true;
+}
+
+int runMirror( int width, int height )
+{
+	const int frames = 12;
+
+	//Each case reaches a different part of the shader: the slot weights under
+	//both bases and all four directions, the bilinear path under shake, the
+	//flash under both schedules, the light, Global and Mix. Fire is pressed
+	//late so the pulse is still in flight at the end of the run.
+	const std::vector< MirrorCase > cases = {
+		{ "defaults               ", {}, sensor::Schedule::Off, -1, false },
+		{ "Hold, Right Left, 60 ms", { { "Interpolation", 1.0f }, { "Direction", 3.0f }, { "Readout Time", 1.0f }, { "Exposure", 0.6f } }, sensor::Schedule::Off, -1, false },
+		{ "Blend, Bottom Up, 60 Hz", { { "Direction", 1.0f }, { "Mains", 2.0f }, { "Depth", 0.9f }, { "Exposure", 0.4f } }, sensor::Schedule::Off, -1, false },
+		{ "shake and rotation     ", { { "Amount", 0.7f }, { "Rotation", 0.6f }, { "Frequency", 0.4f }, { "Readout Time", 0.9f } }, sensor::Schedule::Off, -1, false },
+		{ "Fire, once             ", { { "Length", 0.6f }, { "Phase", 0.5f }, { "Level", 0.8f }, { "Colour", 4.0f }, { "Exposure", 0.3f } }, sensor::Schedule::Once, frames - 2, false },
+		{ "Interval, 0.1 s        ", { { "Interval", 0.0f }, { "Colour", 2.0f }, { "Direction", 2.0f } }, sensor::Schedule::Interval, -1, false },
+		{ "Global, Mix 0.6        ", { { "Global", 1.0f }, { "Exposure", 0.5f }, { "Mix", 0.6f }, { "Amount", 0.3f } }, sensor::Schedule::Off, -1, false },
+		{ "bar, Blend, 1 frame    ", { { "Readout Time", controls::ReadoutParam( 1.0f / 60.0f ) }, { "Exposure", 0.0f } }, sensor::Schedule::Off, -1, true },
+		{ "bar, Hold,  1 frame    ", { { "Readout Time", controls::ReadoutParam( 1.0f / 60.0f ) }, { "Exposure", 0.0f }, { "Interpolation", 1.0f } }, sensor::Schedule::Off, -1, true },
+	};
+
+	//The tolerance is the GPU's own arithmetic, not a fudge: its texture unit
+	//filters with fixed-point sub-texel weights, and its sin and cos are not
+	//libm's. Both move a value by a hair, and a hair is one 8-bit step when
+	//it lands next to a rounding boundary. Anything structural -- a wrong
+	//weight, a wrong row, a pulse a frame late -- is tens of steps.
+	const int tolerance = 2;
+
+	int failures = 0;
+	for( const MirrorCase& c : cases )
+	{
+		MirrorResult r;
+		if( !runMirrorCase( c, width, height, frames, -1.0f, r ) )
+			return 1;
+
+		//A handful of edge flips per frame at most: one row or column's worth
+		//along each edge would already be a systematic difference, not rounding.
+		const long edgeAllowance = static_cast< long >( frames ) * ( width + height ) / 20;
+		const bool ok            = r.worst <= tolerance && r.strayFlips == 0 && r.edgeFlips <= edgeAllowance;
+		std::printf( "mirror %s worst %d/255, %ld of %ld pixels differ at all over %d frames", c.name, r.worst,
+		             r.differing, r.pixels, frames );
+		if( r.edgeFlips > 0 || r.strayFlips > 0 )
+			std::printf( "; %ld on the shaken frame's edge decided in/out the other way", r.edgeFlips );
+		if( r.strayFlips > 0 )
+			std::printf( ", %ld ELSEWHERE", r.strayFlips );
+		if( c.bar )
+			std::printf( "; CPU lean %.3f px", r.leanLast - r.leanFirst );
+		std::printf( "  %s\n", ok ? "ok" : "FAILED" );
+		if( !ok )
+			++failures;
+	}
+
+	//The negative control: the CPU side at a different Readout Time than the
+	//GPU side. It must NOT agree, or the comparison above proves nothing.
+	{
+		MirrorResult r;
+		if( !runMirrorCase( cases[ 0 ], width, height, frames, controls::ReadoutParam( 0.050f ), r ) )
+			return 1;
+		const bool ok = r.worst > tolerance;
+		std::printf( "mirror negative control (CPU at 50 ms, GPU at 20 ms): worst %d/255, %ld pixels differ  %s\n",
+		             r.worst, r.differing, ok ? "ok" : "FAILED -- the comparison cannot fail" );
+		if( !ok )
+			++failures;
+	}
+
+	std::printf( "%s\n", failures == 0 ? "mirror: the OpenFX build's CPU readout matches the GPU" : "mirror: FAILURES" );
+	return failures == 0 ? 0 : 1;
+}
+
+//---------------------------------------------------------------------------
 // --bench
 //---------------------------------------------------------------------------
 double benchAt( Readout& plugin, int width, int height, int frames, double fps )
@@ -1164,6 +1439,7 @@ void usage()
 		"  --flicker         mains bands sit T_light / T_read of the frame apart\n"
 		"  --global          Global on returns the input bit-exactly\n"
 		"  --jello           a sinusoidal shake wobbles the rows at 1/f / T_read of the frame\n"
+		"  --mirror          the OpenFX build's CPU readout matches the GPU, frame for frame\n"
 		"  --bench           time ProcessOpenGL at 720p through 4K\n"
 		"  --pipe            raw RGBA frames on stdin, raw RGBA frames on stdout\n"
 		"  --script PATH     parameter cues for --pipe: 'frame Name Value'\n"
@@ -1240,7 +1516,7 @@ int main( int argc, char** argv )
 		else if( argument == "--pipe" )
 			wantPipe = true;
 		else if( argument == "--skew" || argument == "--band" || argument == "--flicker" || argument == "--global"
-		         || argument == "--jello" )
+		         || argument == "--jello" || argument == "--mirror" )
 			checks.push_back( argument );
 		else
 		{
@@ -1297,6 +1573,8 @@ int main( int argc, char** argv )
 				result = runGlobal( width, height );
 			else if( check == "--jello" )
 				result = runJello( width, height );
+			else if( check == "--mirror" )
+				result = runMirror( width, height );
 			failures += result;
 			std::printf( "\n" );
 		}
