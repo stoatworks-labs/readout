@@ -29,14 +29,14 @@
 /// (`kMaxSlots`), and within it only the frames some row can weigh are
 /// fetched: `t` back to `t - oldestAge`, which is the first row's
 /// `tau + exposure` plus one interpolation neighbour. At 60 fps the defaults
-/// fetch three frames and the longest window the controls allow (60 ms +
-/// 40 ms) fetches seven. Past about 140 fps the longest window outgrows 16
+/// reach back to `t - 2` and the longest window the controls allow (60 ms +
+/// 40 ms) to `t - 7`. Past about 140 fps the longest window outgrows 16
 /// frames, and the oldest rows lose the part of it that falls beyond -- the
 /// same thing the FFGL ring does, by the same rule.
 ///
 /// Before the clip's first frame there is no history, and an age the clip
 /// has not got reads the oldest frame there is -- which is exactly what the
-/// FFGL ring does in the frames after it fills. So frame `N` rendered alone
+/// FFGL ring does while it fills. So frame `N` rendered alone
 /// is the frame the FFGL build renders at `N` after playing 0 to N-1.
 ///
 /// ------------------------------------------------------ what is missing

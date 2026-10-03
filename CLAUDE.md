@@ -1,7 +1,9 @@
 # readout
 
-A CMOS rolling shutter as an FFGL **effect** for Resolume Arena/Avenue. C++/GLSL,
-CMake MODULE → universal `.bundle` (macOS) + Windows `.dll`. MIT.
+A CMOS rolling shutter as an FFGL **effect** for Resolume Arena/Avenue, and an OpenFX
+plugin for Resolve/Vegas/Nuke/Natron that renders the same model on the CPU. C++/GLSL,
+CMake MODULE → universal `.bundle` (macOS) + Windows `.dll`, and `Readout.ofx.bundle`
+for macOS, Windows and Linux. MIT.
 
 Read `AGENTS.md` before changing the sample window, the ring or the flash schedule.
 
@@ -12,6 +14,15 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Build: `cmake --build build --parallel`
 - Install into Arena: `cmake --install build` — **not run from a session**, it writes
   into `~/Documents/Resolume Arena/Extra Effects`
+- OpenFX: built by default into `build/Readout.ofx.bundle`; `-DBUILD_OFX=OFF` skips it,
+  `-DREADOUT_BUILD_FFGL=OFF` builds it alone (no FFGL SDK, no GLEW — the Linux job).
+  It is never installed by CMake: `/Library/OFX/Plugins` is root-owned. Do not copy
+  it there from a session either.
+- Load and render it without a host:
+  `../resolume-ofx-bridge/build/ofxprobe --dir build --render com.stoatworks.readout --size 640x360 --set mains=1 --out /tmp/o.bmp`
+  — `--dir` ADDS a scan path and `/Library/OFX/Plugins` is scanned too; the first
+  bundle with the identifier wins, so check `--json`'s `bundlePath`. Stock ofxprobe
+  renders one still frame at t = 0, so at the defaults the output is the input.
 - x64 Windows DLL: cross-compiled in the Parallels guest — `cmake -A x64`, MSVC 2022
   Build Tools, vcpkg triplet `x64-windows-static-md`. 374,272 B, exports `plugMain`.
   On win-lab, Arena must be started through the session-1 wrapper `C:\arena-lab\s1.ps1`
@@ -44,14 +55,24 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Mains bands sit `T_light / T_read` apart: `./build/rotest --flicker`
 - Global on returns the input bit-exactly: `./build/rotest --global`
 - A shake at f wobbles at `1/f / T_read`: `./build/rotest --jello`
+- The OpenFX build's CPU readout matches the GPU frame for frame: `./build/rotest --mirror`
 - No dead controls: `python3 tools/sweep.py` (`--size WxH`, `--jobs N`)
 - Render cost: `./build/rotest --bench`
 - What a host sees: `../oxbow/build/oxbow probe build-universal/Readout.bundle`
 
 ## Notes
-- **Every pixel is a sample time.** `Readout.cpp` only converts controls into the
-  shader's units and reduces phases; the sample window and everything evaluated at it
-  live in `kReadoutShader`. A wrong band is a GLSL fix.
+- **Every pixel is a sample time.** `Sensor.cpp` converts controls into the shader's
+  units and reduces phases, into one `sensor::Uniforms`; the sample window and
+  everything evaluated at it live in `kReadoutShader`. A wrong band is a GLSL fix.
+- **The readout shader exists twice**: `kReadoutShader`, and `sensor::readoutPixel` in
+  `Sensor.h` for the OpenFX build (`//= mirrored`). Edit both; `rotest --mirror` fails
+  if they drift. Nothing in `Sensor.*` or `Controls.*` may include the FFGL SDK or GL —
+  the Linux OpenFX build has no GL loader.
+- **OpenFX identity is permanent**: `com.stoatworks.readout`, label `Readout`, grouping
+  `Stoatworks`, bundle `com.stoatworks.readout.ofx`, and the parameter script names in
+  `ReadoutOFX.cpp`. The ring there is temporal clip access, `t` back to
+  `t - sensor::oldestAge`, never more than 16 frames. No audio, Beat, Bar, Onset or
+  Fire button; Trigger is Off/Once/Interval anchored at Fire At (seconds).
 - **Time in the shader is `tau`: seconds BEFORE this frame's timestamp**, never
   absolute. Resolume's clock has been seen at 499,217 s, where a float resolves to
   0.03 s — three whole readouts. Phases are reduced into 0..2π on the CPU, in double.
@@ -70,7 +91,9 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Override `SetTextParameter` to return FF_SUCCESS for the About block, or no host can
   instantiate the plugin at all.
 - `readout_core` is an OBJECT library, not STATIC — the plugin registers itself from a
-  file-scope constructor nothing references by name.
+  file-scope constructor nothing references by name. `readout_model` (Controls,
+  Sensor — no GL) is a second OBJECT library and must be named on every final target:
+  an OBJECT library's objects do not travel through another one.
 - macOS build must be universal. Verify with `lipo`, never the build log.
 - FFGL id is `RO01`, display name `SW Readout` (16 characters, the host's limit).
 
@@ -78,8 +101,9 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - **Never run on a GPU in Resolume, and never instantiated in Arena on macOS.** It was
   registered, loaded and instantiated in Arena 7.27.1 on Windows on 2026-09-21, on Mesa
   llvmpipe, with the shaders compiling — no GPU, and nothing timed there. Everything
-  numeric is still measured offline on macOS, plus an `oxbow` load. No user guide and
-  no OpenFX port.
+  numeric is still measured offline on macOS, plus an `oxbow` load. No user guide.
+- **The OpenFX build has never been loaded into Resolve, Vegas, Nuke or Natron** — only
+  into the fleet's probe hosts. It is on `main` but unreleased until the next tag.
 - The **project video** is up (`1dYEzeCZF1Y`). Its scripts live in
   `stoatworks-backend/video/projects/readout` and its footage is `rotest --pipe` on
   Resolume's demo clips — nothing in it was recorded off a screen, and nothing in it

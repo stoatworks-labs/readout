@@ -43,6 +43,16 @@ Arrives inside the FFGL submodule, under the SDK's CustomThumbnail sample.
 
 Part of the upstream SDK tree rather than something this plugin calls — listed because it is present in the checkout. The harness writes PNGs through the system zlib and not through this.
 
+### OpenFX image effect plug-in API
+
+<https://github.com/AcademySoftwareFoundation/openfx>  
+Licence: BSD-3-Clause  
+Copyright: OpenFX and contributors to the OpenFX project
+
+Vendored at external/openfx — a copy of the headers and the C++ Support library, the same subset the rest of the fleet carries.
+
+The plugin ABI for the DaVinci Resolve, Vegas, Nuke and Natron build of the same effect, so one sensor model renders through both host families.
+
 ## Getting this wrong
 
 If your work is here and the description is inaccurate, the licence is wrong, or you would rather not be listed — open an issue and it will be fixed.

@@ -12,10 +12,13 @@
 > Windows**, on a software rasteriser, with its shaders compiling. It has **never run
 > on a GPU in Resolume**, and has never been instantiated in Arena on macOS. It is
 > also loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real
-> FFGL host and is not Resolume. See [Status](#status).
+> FFGL host and is not Resolume. The [OpenFX build](#openfx--resolve-vegas-nuke-natron)
+> renders the same model on the CPU and is held to the GPU's output pixel for pixel; it
+> has **never been loaded into Resolve, Vegas, Nuke or Natron** — only into the fleet's
+> own probe host. See [Status](#status).
 
 A CMOS rolling shutter, as an FFGL effect for [Resolume](https://resolume.com) Arena
-and Avenue.
+and Avenue, and an OpenFX plugin for DaVinci Resolve, Vegas, Nuke and Natron.
 
 ![A test card read out by a rolling shutter: an amber flash band across the middle, rolling mains-flicker bands, and vertical bars bent by camera shake](docs/hero.png)
 
@@ -149,6 +152,60 @@ shake, and this does not.
 Beat and Bar follow Resolume's transport; Onset fires on a transient in the routed
 audio. Audio Drive defaults to zero, so with nothing routed the camera sits still.
 
+## OpenFX — Resolve, Vegas, Nuke, Natron
+
+The same effect also builds as an OpenFX plugin, **Readout** under **Stoatworks**
+(`com.stoatworks.readout`), for DaVinci Resolve, Vegas Pro, Nuke and Natron. It is
+not a port of the model: the controls, the shake, the flash pulse, the mains light and
+every number the readout pass is handed come from the same C++ the FFGL build runs
+(`source/Controls.cpp`, `source/Sensor.cpp`). What is written twice is the readout
+shader's per-pixel arithmetic, which runs on the CPU here, and `rotest --mirror` holds
+the two copies to each other frame by frame.
+
+Unzip `readout-ofx-<platform>.zip` and copy `Readout.ofx.bundle` into the standard
+OpenFX folder, then restart the host:
+
+```
+macOS    /Library/OFX/Plugins/
+Windows  C:\Program Files\Common Files\OFX\Plugins\
+Linux    /usr/OFX/Plugins/
+```
+
+On macOS that folder belongs to root, so the copy needs an administrator. The Linux
+build targets glibc 2.28 — Rocky 8, the distro Resolve supports — and newer.
+
+### What is different from the Resolume build
+
+Same parameter names, ranges, defaults and groups wherever the idea carries over, so
+one set of docs covers both. These are the exceptions, and each has a reason:
+
+- **The ring is the timeline.** Resolume hands the plugin one frame at a time and it
+  remembers the last sixteen. An OpenFX host renders frames in any order, alone and
+  on several threads, so the plugin instead *fetches* the source at `t − 1`, `t − 2`
+  … through temporal clip access — only as far back as the first row's window reaches
+  (back to `t − 2` at the defaults at 60 fps, `t − 7` at the longest window), and never
+  more than sixteen. That is exact where the Resolume build is merely faithful: a
+  scrub or a dropped frame cannot put pictures in the window that were never
+  adjacent, and any frame renders on its own the same way every time. At the very
+  start of a clip there is no history yet, and an age the clip has not got reads the
+  oldest frame there is — which is what the Resolume build does while its ring fills.
+- **No audio.** OpenFX gives a plugin no audio input, so **Audio Drive**, **Audio
+  Band** and the **Onset** trigger do not exist here rather than exist and do nothing.
+- **No Beat or Bar.** They read Resolume's transport; OpenFX has none.
+- **No Fire button.** A press is an event at wall-clock time, and a frame that may be
+  rendered before the frame preceding it cannot depend on one. **Trigger** offers
+  **Off**, **Once** and **Interval** instead, anchored to the timeline by **Fire At**
+  (seconds — frame number ÷ frame rate — and keyframeable): Once fires on the first
+  frame at or after Fire At, which is the press placed on the edit; Interval fires at
+  Fire At and every Interval after it. Each pulse is exactly the one the Resolume
+  build fires on that frame, centred on that frame's Phase point. Resolume's Interval
+  counts from whichever frame fired last, so its period is Interval rounded up to whole
+  frames; here the schedule is a fixed grid and averages Interval exactly.
+- **The frame period is the clip's.** The Resolume build measures the host's frame
+  period from its clock, because nothing tells it; an OpenFX host does.
+- **Float stays float.** In a float project a flash at Level 2 is brighter than white
+  and is left that way; 8- and 16-bit output is clamped, as Resolume's is.
+
 ## Status
 
 **v0.1.0, and honestly early — 21 September 2026.**
@@ -216,10 +273,35 @@ the clip's effect list. No long session, no composition save or reload and no pr
 recall in the host were exercised. No real audio reached the plugin in Arena: the audio
 path has still only seen the harness's synthetic spectrum, never Resolume's FFT, and
 the 64-bin mapping is still assumed rather than measured. Beat and Bar have only seen a
-synthetic 120 bpm transport. Nothing has been built for Linux. There is no user guide
-and no OpenFX port — neither in scope for 0.1.0 — and no factory presets. Nothing has
-been through a show. The [browser demo](#try-it-in-your-browser) is a WebGL2 port and
-proves nothing about the plugin; it exists to be looked at, not to be cited.
+synthetic 120 bpm transport. Resolume has no Linux build, so neither does the FFGL
+plugin. There is no user guide and no factory presets. Nothing has been through a
+show. The [browser demo](#try-it-in-your-browser) is a WebGL2 port and proves nothing
+about the plugin; it exists to be looked at, not to be cited.
+
+### The OpenFX build — on `main`, not yet released
+
+Built and checked on 3 October 2026, on the M4 Max above, and in CI. Not in a tag yet:
+the download block above has no OpenFX zip until the next release.
+
+| check | result |
+| --- | --- |
+| against the Resolume build, frame by frame | the same 30-frame 640×360 moving card at 60 fps through the FFGL plugin on the GPU (`rotest --pipe`) and through the OpenFX plugin in a CPU test host fed the frames as a sequence. Frames 0, 1, 2, 3, 8, 15, 16, 17 and 29 — the first four while the history is still filling — in seven configurations: the defaults, shake and rotation, 60 Hz mains with a long exposure read left to right, Hold read right to left at 60 ms, a flash fired once, a 0.1 s Interval, and Global with Mix 0.6. **Worst 1/255 in every one**; at most 1.4% of pixels differ at all, and 60 Hz and Interval are identical to the byte. Over all 30 frames the Interval flashes land on frames 0, 6, 12, 18 and 24 in both. Rendering the OpenFX side at a different Readout Time differs by 171/255, so the comparison can fail |
+| the two copies of the readout shader | `rotest --mirror`, nine cases over twelve 1280×720 frames each: **worst 1/255** against the GPU, one pixel in twelve frames of shake decided inside/outside the shaken frame's edge the other way, and the one-frame-readout bar leans **24.000 px** under Blend and Hold, exactly as on the GPU. On CI's software renderer at 320×180 the shake case reaches 3/255, which is that renderer's texture filter; every other case stays at 1 |
+| frame N on its own | frames 2, 12 and 20 with shake, the longest window, mains and Interval flashes: rendered alone, rendered after 0..N−1 in one instance, and rendered first and then backwards all give the **same bytes**; so does a run where the host refuses every fetch outside what `getFramesNeeded` declared, with no fetch refused |
+| the window | at frame 20 the plugin asks for 18–20 at the defaults and 13–20 at the longest window at 60 fps; at 240 fps, 14–20 and 5–20 — the 16-frame bound |
+| float | the same comparison in a 32-bit float project: worst 1/255 |
+| render cost | 1920×1080 on the test host's 8 threads: **3.6 ms** a frame at the defaults, 5.9 ms at the longest window, 8.7 ms with shake on, 12.9 ms with everything on |
+| the bundle | universal (`x86_64 arm64`), exports `OfxGetPlugin`, names its own binary in its plist and ad-hoc signs; `tools/verify.sh` checks all of it and that a still picture comes back untouched |
+| Windows and Linux | CI builds the Windows `.ofx`; the Linux one is built in AlmaLinux 8 against glibc 2.28 and `dlopen`ed on a stock Rocky 8, the distro Resolve supports, where it reports `com.stoatworks.readout`. A load, not a render |
+
+**What is not established.** It has **never been loaded into DaVinci Resolve, Vegas,
+Nuke or Natron**, on any platform; everything above is the fleet's own probe hosts and
+this repository's harness. Those hosts hand over 8-bit and float RGBA, premultiplied,
+at full resolution — so the 16-bit path, an unpremultiplied clip, an RGB clip and a
+proxy render scale have never been exercised. Nobody has seen how a real host answers
+for the frames before a clip's head, or how Resolve draws a keyframeable seconds
+parameter like Fire At. The Windows build has never been loaded by anything; the Linux
+build has been loaded but never rendered.
 
 ## Build
 
@@ -235,6 +317,9 @@ cmake --install build     # into ~/Documents/Resolume Arena/Extra Effects
 
 macOS builds are universal (Apple Silicon + Intel) by default; add
 `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster dev build. Windows needs GLEW via vcpkg.
+The OpenFX plugin builds alongside the FFGL one into `build/Readout.ofx.bundle`;
+`-DBUILD_OFX=OFF` skips it, and `-DREADOUT_BUILD_FFGL=OFF` builds it alone with
+nothing but a compiler — no FFGL SDK, no GLEW — which is how the Linux build is made.
 The x64 Windows DLL that was loaded into Arena was cross-compiled in the Parallels
 guest on this Mac — `cmake -A x64`, MSVC 2022 Build Tools, vcpkg triplet
 `x64-windows-static-md`.
@@ -252,6 +337,7 @@ clock and a synthetic transport:
 ./build/rotest --flicker
 ./build/rotest --global
 ./build/rotest --jello
+./build/rotest --mirror                                # the OpenFX CPU readout matches the GPU
 ./build/rotest --bench                                 # 720p through 4K
 python3 tools/sweep.py                                 # no control is silently dead
 tools/verify.sh                                        # all of it, on a fresh universal build
