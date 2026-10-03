@@ -1223,7 +1223,16 @@ int runMirror( int width, int height )
 	//libm's. Both move a value by a hair, and a hair is one 8-bit step when
 	//it lands next to a rounding boundary. Anything structural -- a wrong
 	//weight, a wrong row, a pulse a frame late -- is tens of steps.
-	const int tolerance = 2;
+	//
+	//Apple's software renderer, which is what a CI runner without a GPU
+	//falls back to, quantises the sub-texel position more coarsely than a
+	//GPU does: under shake, across a hard 255-level edge, it lands up to 3
+	//steps from the exact bilinear value (measured on macos-14, 320x180,
+	//where every other case stays within 1). It gets 4; a GPU gets 2.
+	const char* renderer = reinterpret_cast< const char* >( glGetString( GL_RENDERER ) );
+	const bool software  = renderer != nullptr && std::strstr( renderer, "Software" ) != nullptr;
+	const int tolerance  = software ? 4 : 2;
+	std::printf( "renderer: %s, tolerance %d/255\n", renderer != nullptr ? renderer : "unknown", tolerance );
 
 	int failures = 0;
 	for( const MirrorCase& c : cases )
