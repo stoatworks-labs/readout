@@ -1150,11 +1150,17 @@ bool runMirrorCase( const MirrorCase& c, int width, int height, int frames, floa
 		//float rounding -- the GPU's sin and FMA against libm's -- can put the
 		//two sides of one comparison either way: transparent black on one,
 		//the edge texel on the other. That is a disagreement about which side
-		//of a line a point within 1e-7 of it lies, so it is counted apart --
-		//but ONLY where the GPU's own picture has an edge there. A flip
-		//anywhere else is a fault, and fails.
-		const auto alpha = [ & ]( const std::vector< unsigned char >& image, int x, int y ) {
-			return image[ ( static_cast< size_t >( y ) * width + x ) * 4 + 3 ];
+		//of a line a point within rounding of it lies, so it is counted apart
+		//-- but ONLY where the CPU's own sample point is that close to the
+		//picture's edge. A flip anywhere else is a fault, and fails.
+		const auto onTheEdge = [ & ]( int x, int y ) {
+			const int glY            = height - 1 - y;
+			const sensor::RowTime rt = sensor::rowTime( u, x, glY );
+			float su = 0.0f, sv = 0.0f;
+			sensor::cameraSample( u, x, glY, rt, su, sv );
+			const float distance = std::min( std::min( std::fabs( su ), std::fabs( su - 1.0f ) ),
+			                                  std::min( std::fabs( sv ), std::fabs( sv - 1.0f ) ) );
+			return distance < 1e-4f;
 		};
 		for( int y = 0; y < height; ++y )
 		{
@@ -1171,17 +1177,7 @@ bool runMirrorCase( const MirrorCase& c, int width, int height, int frames, floa
 
 				if( ( gpu[ i + 3 ] == 0 ) != ( cpu[ i + 3 ] == 0 ) )
 				{
-					const unsigned char here = alpha( gpu, x, y );
-					bool edge                = false;
-					for( int dy = -1; dy <= 1 && !edge; ++dy )
-						for( int dx = -1; dx <= 1 && !edge; ++dx )
-						{
-							const int nx = x + dx, ny = y + dy;
-							if( nx >= 0 && nx < width && ny >= 0 && ny < height
-							    && ( alpha( gpu, nx, ny ) == 0 ) != ( here == 0 ) )
-								edge = true;
-						}
-					if( edge )
+					if( onTheEdge( x, y ) )
 					{
 						++result.edgeFlips;
 						continue;

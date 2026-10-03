@@ -270,6 +270,108 @@ inline void linear( const Texel& texel, int w, int h, float u, float v, float ou
 	}
 }
 
+/// When one pixel's row was read, in the shader's own terms: `tau` frames
+/// before the timestamp, the window [a0, a1] in frames, and `tauR` and `E` in
+/// seconds. `x` and `y` count from the bottom left, as GL and OpenFX do.
+struct RowTime
+{
+	float tau  = 0.0f;
+	float a0   = 0.0f;
+	float a1   = 0.0f;
+	float tauR = 0.0f;
+	float E    = 0.0f;
+};
+
+/// What the vertex shader interpolates to at this pixel's centre.
+inline void pixelUV( const Uniforms& u, int x, int y, float& uvx, float& uvy )
+{
+	uvx = ( static_cast< float >( x ) + 0.5f ) / static_cast< float >( u.width );
+	uvy = ( static_cast< float >( y ) + 0.5f ) / static_cast< float >( u.height );
+}
+
+inline RowTime rowTime( const Uniforms& u, int x, int y )
+{
+	float uvx, uvy;
+	pixelUV( u, x, y, uvx, uvy );
+
+	//= mirrored from kReadoutShader: which row, and when it was read.
+	float rows, row;
+	if( u.direction == 0 )
+	{
+		rows = static_cast< float >( u.height );
+		row  = std::floor( ( 1.0f - uvy ) * rows );
+	}
+	else if( u.direction == 1 )
+	{
+		rows = static_cast< float >( u.height );
+		row  = std::floor( uvy * rows );
+	}
+	else if( u.direction == 2 )
+	{
+		rows = static_cast< float >( u.width );
+		row  = std::floor( uvx * rows );
+	}
+	else
+	{
+		rows = static_cast< float >( u.width );
+		row  = std::floor( ( 1.0f - uvx ) * rows );
+	}
+	row = std::clamp( row, 0.0f, rows - 1.0f );
+
+	RowTime t;
+	t.tau  = u.readoutFrames * ( 1.0f - row / rows );
+	t.a0   = t.tau;
+	t.a1   = t.tau + u.exposureFrames;
+	t.tauR = t.tau * u.frameSeconds;
+	t.E    = u.exposureFrames * u.frameSeconds;
+	return t;
+}
+
+/// Where the camera puts this pixel's sample, in 0..1 picture space: the
+/// shader's `sampleUV`. Returns false -- and the pixel centre -- when the
+/// camera is still, which is the shader's exact, untransformed path.
+inline bool cameraSample( const Uniforms& u, int x, int y, const RowTime& t, float& sampleU, float& sampleV )
+{
+	float uvx, uvy;
+	pixelUV( u, x, y, uvx, uvy );
+	sampleU = uvx;
+	sampleV = uvy;
+	if( u.shakeActive != 1 )
+		return false;
+
+	//= mirrored from kReadoutShader: the camera, at the middle of the window.
+	const float kTauF = 6.283185307179586f;
+	const float tauC  = t.tauR + 0.5f * t.E;
+
+	float dx = 0.0f, dy = 0.0f, rot = 0.0f;
+	for( int i = 0; i < kShakeComponents; ++i )
+	{
+		const float arg = kTauF * u.shakeHz[ i ] * tauC;
+		dx += u.shakeAmp[ i * 3 + 0 ] * std::sin( u.shakePhase[ i * 3 + 0 ] - arg );
+		dy += u.shakeAmp[ i * 3 + 1 ] * std::sin( u.shakePhase[ i * 3 + 1 ] - arg );
+		rot += u.shakeAmp[ i * 3 + 2 ] * std::sin( u.shakePhase[ i * 3 + 2 ] - arg );
+	}
+
+	if( u.onsetTau >= 0.0f && tauC < u.onsetTau )
+	{
+		const float since = u.onsetTau - tauC;
+		const float w     = u.onsetAmp * std::exp( -since / u.onsetDecay ) * std::sin( kTauF * u.onsetHz * since );
+		dx += 0.3f * w;
+		dy += w;
+	}
+
+	const float aspect = static_cast< float >( u.width ) / static_cast< float >( u.height );
+	const float px     = ( uvx - 0.5f ) * aspect;
+	const float py     = uvy - 0.5f;
+	const float c      = std::cos( rot );
+	const float s      = std::sin( rot );
+	const float rx     = px * c - py * s + dx;
+	const float ry     = px * s + py * c + dy;
+	sampleU            = rx / aspect + 0.5f;
+	sampleV            = ry + 0.5f;
+	return true;
+}
+
 /**
 	One output pixel: `kReadoutShader`'s main, in C++.
 
@@ -284,80 +386,14 @@ inline void linear( const Texel& texel, int w, int h, float u, float v, float ou
 template< class Frames >
 inline void readoutPixel( const Uniforms& u, int x, int y, const Frames& frames, float out[ 4 ] )
 {
-	const float pictureW = static_cast< float >( u.width );
-	const float pictureH = static_cast< float >( u.height );
+	const RowTime t  = rowTime( u, x, y );
+	const float a0   = t.a0;
+	const float a1   = t.a1;
+	const float tauR = t.tauR;
+	const float E    = t.E;
 
-	//What the vertex shader interpolates to at this pixel's centre.
-	const float uvx = ( static_cast< float >( x ) + 0.5f ) / pictureW;
-	const float uvy = ( static_cast< float >( y ) + 0.5f ) / pictureH;
-
-	//= mirrored from kReadoutShader: which row, and when it was read.
-	float rows, row;
-	if( u.direction == 0 )
-	{
-		rows = pictureH;
-		row  = std::floor( ( 1.0f - uvy ) * rows );
-	}
-	else if( u.direction == 1 )
-	{
-		rows = pictureH;
-		row  = std::floor( uvy * rows );
-	}
-	else if( u.direction == 2 )
-	{
-		rows = pictureW;
-		row  = std::floor( uvx * rows );
-	}
-	else
-	{
-		rows = pictureW;
-		row  = std::floor( ( 1.0f - uvx ) * rows );
-	}
-	row = std::clamp( row, 0.0f, rows - 1.0f );
-
-	const float tau = u.readoutFrames * ( 1.0f - row / rows );
-	const float a0  = tau;
-	const float a1  = tau + u.exposureFrames;
-
-	const float tauR = tau * u.frameSeconds;
-	const float E    = u.exposureFrames * u.frameSeconds;
-
-	//= mirrored from kReadoutShader: the camera, at the middle of the window.
-	float sampleU    = uvx;
-	float sampleV    = uvy;
-	const bool moved = u.shakeActive == 1;
-	if( moved )
-	{
-		const float kTauF = 6.283185307179586f;
-		const float tauC  = tauR + 0.5f * E;
-
-		float dx = 0.0f, dy = 0.0f, rot = 0.0f;
-		for( int i = 0; i < kShakeComponents; ++i )
-		{
-			const float arg = kTauF * u.shakeHz[ i ] * tauC;
-			dx += u.shakeAmp[ i * 3 + 0 ] * std::sin( u.shakePhase[ i * 3 + 0 ] - arg );
-			dy += u.shakeAmp[ i * 3 + 1 ] * std::sin( u.shakePhase[ i * 3 + 1 ] - arg );
-			rot += u.shakeAmp[ i * 3 + 2 ] * std::sin( u.shakePhase[ i * 3 + 2 ] - arg );
-		}
-
-		if( u.onsetTau >= 0.0f && tauC < u.onsetTau )
-		{
-			const float since = u.onsetTau - tauC;
-			const float w     = u.onsetAmp * std::exp( -since / u.onsetDecay ) * std::sin( kTauF * u.onsetHz * since );
-			dx += 0.3f * w;
-			dy += w;
-		}
-
-		const float aspect = pictureW / pictureH;
-		const float px     = ( uvx - 0.5f ) * aspect;
-		const float py     = uvy - 0.5f;
-		const float c      = std::cos( rot );
-		const float s      = std::sin( rot );
-		const float rx     = px * c - py * s + dx;
-		const float ry     = px * s + py * c + dy;
-		sampleU            = rx / aspect + 0.5f;
-		sampleV            = ry + 0.5f;
-	}
+	float sampleU, sampleV;
+	const bool moved = cameraSample( u, x, y, t, sampleU, sampleV );
 
 	//= mirrored from kReadoutShader: the scene, integrated across the ring
 	//over the window. Outside the picture there is nothing to show.
