@@ -327,17 +327,24 @@ inline RowTime rowTime( const Uniforms& u, int x, int y )
 	return t;
 }
 
-/// Where the camera puts this pixel's sample, in 0..1 picture space: the
-/// shader's `sampleUV`. Returns false -- and the pixel centre -- when the
-/// camera is still, which is the shader's exact, untransformed path.
-inline bool cameraSample( const Uniforms& u, int x, int y, const RowTime& t, float& sampleU, float& sampleV )
+/// The camera when one row was read: a translation in picture heights and
+/// the cosine and sine of a turn. Every pixel on a row shares it, which is
+/// what makes jello -- and what lets a CPU evaluate it once per row rather
+/// than once per pixel, with the same arithmetic and so the same answer.
+struct Pose
 {
-	float uvx, uvy;
-	pixelUV( u, x, y, uvx, uvy );
-	sampleU = uvx;
-	sampleV = uvy;
+	bool moved = false;///< false: the shader's exact, untransformed path
+	float dx   = 0.0f;
+	float dy   = 0.0f;
+	float c    = 1.0f;
+	float s    = 0.0f;
+};
+
+inline Pose cameraPose( const Uniforms& u, const RowTime& t )
+{
+	Pose pose;
 	if( u.shakeActive != 1 )
-		return false;
+		return pose;
 
 	//= mirrored from kReadoutShader: the camera, at the middle of the window.
 	const float kTauF = 6.283185307179586f;
@@ -360,16 +367,42 @@ inline bool cameraSample( const Uniforms& u, int x, int y, const RowTime& t, flo
 		dy += w;
 	}
 
+	pose.moved = true;
+	pose.dx    = dx;
+	pose.dy    = dy;
+	pose.c     = std::cos( rot );
+	pose.s     = std::sin( rot );
+	return pose;
+}
+
+/// Where the camera puts this pixel's sample, in 0..1 picture space: the
+/// shader's `sampleUV`. The pixel centre itself when the camera is still.
+inline void poseSample( const Uniforms& u, const Pose& pose, int x, int y, float& sampleU, float& sampleV )
+{
+	float uvx, uvy;
+	pixelUV( u, x, y, uvx, uvy );
+	sampleU = uvx;
+	sampleV = uvy;
+	if( !pose.moved )
+		return;
+
+	//= mirrored from kReadoutShader: centred, in picture heights on both axes,
+	//so a rotation is a rotation on a 16:9 frame rather than a shear.
 	const float aspect = static_cast< float >( u.width ) / static_cast< float >( u.height );
 	const float px     = ( uvx - 0.5f ) * aspect;
 	const float py     = uvy - 0.5f;
-	const float c      = std::cos( rot );
-	const float s      = std::sin( rot );
-	const float rx     = px * c - py * s + dx;
-	const float ry     = px * s + py * c + dy;
+	const float rx     = px * pose.c - py * pose.s + pose.dx;
+	const float ry     = px * pose.s + py * pose.c + pose.dy;
 	sampleU            = rx / aspect + 0.5f;
 	sampleV            = ry + 0.5f;
-	return true;
+}
+
+/// Both of the above, for one pixel. Returns whether the camera moved.
+inline bool cameraSample( const Uniforms& u, int x, int y, const RowTime& t, float& sampleU, float& sampleV )
+{
+	const Pose pose = cameraPose( u, t );
+	poseSample( u, pose, x, y, sampleU, sampleV );
+	return pose.moved;
 }
 
 /**
@@ -384,16 +417,31 @@ inline bool cameraSample( const Uniforms& u, int x, int y, const RowTime& t, flo
 	framebuffer it writes to, and a float host has no such thing.
 */
 template< class Frames >
+inline void readoutPixelAt( const Uniforms& u, int x, int y, const RowTime& t, const Pose& pose,
+                            const Frames& frames, float out[ 4 ] );
+
+template< class Frames >
 inline void readoutPixel( const Uniforms& u, int x, int y, const Frames& frames, float out[ 4 ] )
 {
-	const RowTime t  = rowTime( u, x, y );
+	const RowTime t = rowTime( u, x, y );
+	readoutPixelAt( u, x, y, t, cameraPose( u, t ), frames, out );
+}
+
+/// The same, with the row's timing and the camera's pose already in hand.
+/// Both depend only on the row -- `rowTime` and `cameraPose` of any pixel on
+/// it -- so a caller drawing a whole row can work them out once.
+template< class Frames >
+inline void readoutPixelAt( const Uniforms& u, int x, int y, const RowTime& t, const Pose& pose,
+                            const Frames& frames, float out[ 4 ] )
+{
 	const float a0   = t.a0;
 	const float a1   = t.a1;
 	const float tauR = t.tauR;
 	const float E    = t.E;
 
 	float sampleU, sampleV;
-	const bool moved = cameraSample( u, x, y, t, sampleU, sampleV );
+	poseSample( u, pose, x, y, sampleU, sampleV );
+	const bool moved = pose.moved;
 
 	//= mirrored from kReadoutShader: the scene, integrated across the ring
 	//over the window. Outside the picture there is nothing to show.

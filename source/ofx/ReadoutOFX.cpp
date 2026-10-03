@@ -191,6 +191,28 @@ public:
 
 	void multiThreadProcessImages( OfxRectI window ) override
 	{
+		//A sensor row's timing and the camera's pose are the same for every
+		//pixel on it, so they are worked out once per row -- per picture row
+		//for a sensor reading top to bottom, per picture column for one
+		//mounted sideways. Same functions, same arithmetic, same answer as
+		//evaluating them per pixel the way the shader does; just not twelve
+		//sines a pixel.
+		const bool rowsRunAcross = u.direction < 2;
+		std::vector< sensor::RowTime > columnTime;
+		std::vector< sensor::Pose > columnPose;
+		if( !rowsRunAcross )
+		{
+			columnTime.resize( static_cast< size_t >( window.x2 - window.x1 ) );
+			columnPose.resize( columnTime.size() );
+			for( int x = window.x1; x < window.x2; ++x )
+			{
+				const int px = std::clamp( x - x0, 0, u.width - 1 );
+				const size_t i = static_cast< size_t >( x - window.x1 );
+				columnTime[ i ] = sensor::rowTime( u, px, 0 );
+				columnPose[ i ] = sensor::cameraPose( u, columnTime[ i ] );
+			}
+		}
+
 		for( int y = window.y1; y < window.y2; ++y )
 		{
 			if( _effect.abort() )
@@ -201,12 +223,24 @@ public:
 				continue;
 
 			const int py = y - y0;
+			sensor::RowTime rowTime;
+			sensor::Pose rowPose;
+			if( rowsRunAcross )
+			{
+				rowTime = sensor::rowTime( u, 0, std::clamp( py, 0, u.height - 1 ) );
+				rowPose = sensor::cameraPose( u, rowTime );
+			}
+
 			for( int x = window.x1; x < window.x2; ++x, dst += nComponents )
 			{
 				const int px  = x - x0;
 				float out[ 4 ] = { 0.0f, 0.0f, 0.0f, 0.0f };
 				if( px >= 0 && px < u.width && py >= 0 && py < u.height )
-					sensor::readoutPixel( u, px, py, frames, out );
+				{
+					const size_t i = static_cast< size_t >( x - window.x1 );
+					sensor::readoutPixelAt( u, px, py, rowsRunAcross ? rowTime : columnTime[ i ],
+					                        rowsRunAcross ? rowPose : columnPose[ i ], frames, out );
+				}
 
 				float a = out[ 3 ];
 				if( maxValue != 1 )
