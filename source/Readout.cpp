@@ -35,12 +35,10 @@ constexpr int kClockVotes = 4;
 /// when a clip is retriggered, and by however long the machine was asleep.
 constexpr double kMaxFrameDelta = 0.25;
 
-constexpr double kTau = 6.283185307179586;
-
-const char* const kDirectionNames[]     = { "Top Down", "Bottom Up", "Left Right", "Right Left" };
-const char* const kInterpolationNames[] = { "Blend", "Hold" };
-const char* const kTriggerNames[]       = { "Off", "Beat", "Bar", "Onset", "Interval" };
-const char* const kMainsNames[]         = { "Off", "50 Hz", "60 Hz" };
+//Direction, Interpolation, Mains and Colour are named in Controls.cpp, where
+//the OpenFX build reads them too. These two are FFGL-only: OpenFX has no
+//transport and no audio.
+const char* const kTriggerNames[] = { "Off", "Beat", "Bar", "Onset", "Interval" };
 
 /// Which part of the spectrum shakes the camera. A subwoofer's air moves a
 /// tripod; a hi-hat does not, but a snare on a stage floor might.
@@ -53,24 +51,6 @@ constexpr int kBandRange[ kBandCount ][ 2 ] = {
 	{ 28, 63 },
 };
 
-/// The band-limited noise: four sinusoids around the base frequency, with
-/// incommensurable ratios so the sum never repeats within a take, and
-/// weights falling off away from the centre. Normalised so the peak
-/// displacement is the amplitude the control names.
-constexpr float kShakeRatio[ Readout::kShakeComponents ]  = { 1.0f, 1.47f, 0.63f, 2.31f };
-constexpr float kShakeWeight[ Readout::kShakeComponents ] = { 1.0f, 0.45f, 0.35f, 0.18f };
-constexpr float kShakeWeightSum                           = 1.98f;
-
-/// Fixed phase offsets per component and axis, so x, y and rotation are not
-/// in step. Golden-angle spaced, which is as far from a pattern as three
-/// numbers get.
-constexpr double kPhaseOffset[ Readout::kShakeComponents ][ 3 ] = {
-	{ 0.0, 2.399963, 4.799926 },
-	{ 0.916298, 3.316261, 5.716224 },
-	{ 1.832596, 4.232559, 0.349337 },
-	{ 2.748894, 5.148857, 1.265635 },
-};
-
 /// Wall clock, for hosts that never call SetTime. Steady rather than system,
 /// so nothing here moves when the machine's clock is corrected.
 double wallSeconds()
@@ -78,15 +58,6 @@ double wallSeconds()
 	using namespace std::chrono;
 	static const steady_clock::time_point start = steady_clock::now();
 	return duration_cast< duration< double > >( steady_clock::now() - start ).count();
-}
-
-/// An angle reduced into [0, 2pi) in double, before it is handed to a
-/// float. `fmod( omega * t, 2pi )` at t = 500,000 s is exact to about 1e-10
-/// in double and meaningless in float.
-float reducedAngle( double omega, double t )
-{
-	const double a = std::fmod( omega * t, kTau );
-	return static_cast< float >( a < 0.0 ? a + kTau : a );
 }
 
 /// glGetString returns nullptr when there is no current context, and feeding
@@ -112,37 +83,34 @@ Readout::Readout()
 	//---------------------------------------------------------------------
 	// Defaults, in the slider's units, computed from the physical value so
 	// that what the README says the default is, is the default. SetParamInfof
-	// reads each one back out of GetFloatParameter.
-	//
-	// They add up to a 20 ms readout with a 4 ms exposure and nothing else:
-	// a sensor a little slower than a phone's, on a still tripod, with no
-	// flash and no flicker. Moving content leans; nothing else happens until
-	// asked. The null is Global.
+	// reads each one back out of GetFloatParameter. The physical values live
+	// in Controls.h, because the OpenFX build declares the same ones; what
+	// they add up to is written down there.
 	//---------------------------------------------------------------------
-	params[ PT_READOUT ]       = controls::ReadoutParam( 0.020f );
-	params[ PT_EXPOSURE ]      = controls::ExposureParam( 0.004f );
+	params[ PT_READOUT ]       = controls::ReadoutParam( controls::defaults::kReadoutSeconds );
+	params[ PT_EXPOSURE ]      = controls::ExposureParam( controls::defaults::kExposureSeconds );
 	params[ PT_DIRECTION ]     = static_cast< float >( kTopDown );
 	params[ PT_INTERPOLATION ] = 0.0f;//Blend
 	params[ PT_GLOBAL ]        = 0.0f;
 
 	params[ PT_AMOUNT ]      = 0.0f;
-	params[ PT_FREQUENCY ]   = controls::ShakeFrequencyParam( 8.0f );
+	params[ PT_FREQUENCY ]   = controls::ShakeFrequencyParam( controls::defaults::kShakeHz );
 	params[ PT_ROTATION ]    = 0.0f;
 	params[ PT_AUDIO_DRIVE ] = 0.0f;//off until somebody routes audio to it
 	params[ PT_AUDIO_BAND ]  = 1.0f;//Low: the air that moves a tripod
 
 	params[ PT_FIRE ]     = 0.0f;
 	params[ PT_TRIGGER ]  = static_cast< float >( kTriggerOff );
-	params[ PT_INTERVAL ] = 0.624f;//about one second
-	params[ PT_LENGTH ]   = controls::FlashLengthParam( 0.002f );
-	params[ PT_PHASE ]    = 0.3f;
-	params[ PT_LEVEL ]    = 0.5f;//unity after mapping
+	params[ PT_INTERVAL ] = controls::defaults::kInterval;
+	params[ PT_LENGTH ]   = controls::FlashLengthParam( controls::defaults::kFlashLengthSeconds );
+	params[ PT_PHASE ]    = controls::defaults::kPhase;
+	params[ PT_LEVEL ]    = controls::defaults::kLevel;
 	params[ PT_COLOUR ]   = 0.0f;//White
 
 	params[ PT_MAINS ] = 0.0f;//Off
-	params[ PT_DEPTH ] = 0.5f;
+	params[ PT_DEPTH ] = controls::defaults::kDepth;
 
-	params[ PT_MIX ] = 1.0f;
+	params[ PT_MIX ] = controls::defaults::kMix;
 
 	//---------------------------------------------------------------------
 	// Declaration. Every ranged parameter is a plain 0..1 float even where
@@ -154,16 +122,16 @@ Readout::Readout()
 	// one here is a progression (a direction, a schedule, a frequency) or a
 	// palette, and alphabetical would file 50 Hz under 5 and Off under O.
 	//---------------------------------------------------------------------
-	auto declareOptions = [ this ]( unsigned int id, const char* name, const char* const* names, int count ) {
+	auto declareOptions = [ this ]( unsigned int id, const char* name, const char* ( *nameOf )( int ), int count ) {
 		SetOptionParamInfo( id, name, static_cast< unsigned int >( count ), params[ id ] );
 		for( int i = 0; i < count; ++i )
-			SetParamElementInfo( id, static_cast< unsigned int >( i ), names[ i ], static_cast< float >( i ) );
+			SetParamElementInfo( id, static_cast< unsigned int >( i ), nameOf( i ), static_cast< float >( i ) );
 	};
 
 	SetParamInfof( PT_READOUT, "Readout Time", FF_TYPE_STANDARD );
 	SetParamInfof( PT_EXPOSURE, "Exposure", FF_TYPE_STANDARD );
-	declareOptions( PT_DIRECTION, "Direction", kDirectionNames, kDirectionCount );
-	declareOptions( PT_INTERPOLATION, "Interpolation", kInterpolationNames, 2 );
+	declareOptions( PT_DIRECTION, "Direction", controls::DirectionName, controls::kDirectionCount );
+	declareOptions( PT_INTERPOLATION, "Interpolation", controls::InterpolationName, controls::kInterpolationCount );
 	SetParamInfo( PT_GLOBAL, "Global", FF_TYPE_BOOLEAN, false );
 
 	SetParamInfof( PT_AMOUNT, "Amount", FF_TYPE_STANDARD );
@@ -177,12 +145,12 @@ Readout::Readout()
 	for( int i = 0; i < kAudioBins; ++i )
 		SetParamElementInfo( PT_AUDIO_FFT, static_cast< unsigned int >( i ), "", 0.0f );
 	SetParamInfof( PT_AUDIO_DRIVE, "Audio Drive", FF_TYPE_STANDARD );
-	declareOptions( PT_AUDIO_BAND, "Audio Band", kBandNames, kBandCount );
+	declareOptions( PT_AUDIO_BAND, "Audio Band", []( int i ) { return kBandNames[ i ]; }, kBandCount );
 
 	//An event, which the host draws as a button. The only control here that
 	//is an instruction rather than a value.
 	SetParamInfo( PT_FIRE, "Fire", FF_TYPE_EVENT, false );
-	declareOptions( PT_TRIGGER, "Trigger", kTriggerNames, kTriggerCount );
+	declareOptions( PT_TRIGGER, "Trigger", []( int i ) { return kTriggerNames[ i ]; }, kTriggerCount );
 	SetParamInfof( PT_INTERVAL, "Interval", FF_TYPE_STANDARD );
 	SetParamInfof( PT_LENGTH, "Length", FF_TYPE_STANDARD );
 	SetParamInfof( PT_PHASE, "Phase", FF_TYPE_STANDARD );
@@ -192,7 +160,7 @@ Readout::Readout()
 		SetParamElementInfo( PT_COLOUR, static_cast< unsigned int >( i ), controls::FlashColourName( i ),
 		                     static_cast< float >( i ) );
 
-	declareOptions( PT_MAINS, "Mains", kMainsNames, 3 );
+	declareOptions( PT_MAINS, "Mains", controls::MainsName, controls::kMainsCount );
 	SetParamInfof( PT_DEPTH, "Depth", FF_TYPE_STANDARD );
 
 	SetParamInfof( PT_MIX, "Mix", FF_TYPE_STANDARD );
@@ -398,16 +366,9 @@ void Readout::updateAudio( double now, double dt )
 //---------------------------------------------------------------------------
 void Readout::fire( double now, float readoutSeconds )
 {
-	Flash flash;
-	//The pulse is centred on the phase point of THIS frame's readout: the
-	//first row was read `readout` ago, the last row now, so phase p is
-	//`readout * ( 1 - p )` seconds before now.
-	flash.centre = now - static_cast< double >( readoutSeconds ) * ( 1.0 - controls::FlashPhase( params[ PT_PHASE ] ) );
-	flash.length = controls::FlashLengthSeconds( params[ PT_LENGTH ] );
-	flash.level  = controls::FlashLevel( params[ PT_LEVEL ] );
-	controls::FlashColour( params[ PT_COLOUR ], flash.rgb );
-
-	flashes.push_back( flash );
+	//Centred on the phase point of THIS frame's readout; see firePulse.
+	flashes.push_back( sensor::firePulse( now, readoutSeconds, params[ PT_PHASE ], params[ PT_LENGTH ],
+	                                      params[ PT_LEVEL ], params[ PT_COLOUR ] ) );
 	while( flashes.size() > static_cast< size_t >( kMaxFlashes ) )
 		flashes.erase( flashes.begin() );
 }
@@ -514,27 +475,22 @@ FFResult Readout::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	//Drop every pulse that every row's window has passed.
 	for( size_t i = 0; i < flashes.size(); )
 	{
-		const double begin = ( now - flashes[ i ].centre ) + 0.5 * flashes[ i ].length;
-		if( begin - flashes[ i ].length > readoutSeconds + exposure + 0.002 )
+		if( sensor::pulseSpent( flashes[ i ], now, readoutSeconds, exposure ) )
 			flashes.erase( flashes.begin() + static_cast< long >( i ) );
 		else
 			++i;
 	}
 
 	//---------------------------------------------------------------------
-	// The ring. Deep enough for the oldest row's window, plus a frame each
-	// side for the interpolation, rounded up to a multiple of four so that
-	// dragging Readout Time reallocates -- and empties -- the ring at four
-	// boundaries rather than at every millisecond.
+	// The ring, as deep as sensor::ringSlots says -- the OpenFX build weighs
+	// the same frames by the same rule.
 	//
 	// Every Ensure() happens here, before anything binds a texture. Not
 	// tidiness: allocating a texture leaves unit 0 bound to nothing, and the
 	// symptom of getting the order wrong is correct on every frame except
 	// the one that allocates.
 	//---------------------------------------------------------------------
-	const double windowFrames = ( static_cast< double >( readoutSeconds ) + exposure ) / frameSeconds;
-	int slots                 = static_cast< int >( std::ceil( windowFrames ) ) + 2;
-	slots                     = std::clamp( ( ( slots + 3 ) / 4 ) * 4, 4, kMaxSlots );
+	int slots = sensor::ringSlots( readoutSeconds, exposure, frameSeconds );
 
 	if( !ring.Ensure( pictureWidth, pictureHeight, slots ) )
 	{
@@ -579,7 +535,56 @@ FFResult Readout::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 
 	//---------------------------------------------------------------------
 	// 2. Readout, straight to the host's framebuffer.
+	//
+	// Every uniform is decided into a sensor::Uniforms first and pushed after,
+	// so the one struct is the whole contract with the shader -- and the
+	// OpenFX build, which fills the same struct from the same helpers, runs
+	// its C++ mirror of the shader on exactly what this one hands the GPU.
 	//---------------------------------------------------------------------
+	sensor::Uniforms u;
+	u.slots  = slots;
+	u.filled = filled;
+	u.width  = pictureWidth;
+	u.height = pictureHeight;
+
+	//In frames, computed in double: the harness sets a readout of exactly
+	//one frame, and 1.0 has to arrive as 1.0.
+	u.frameSeconds   = static_cast< float >( frameSeconds );
+	u.readoutFrames  = static_cast< float >( readoutSeconds / frameSeconds );
+	u.exposureFrames = static_cast< float >( exposure / frameSeconds );
+	u.direction      = direction;
+	u.hold           = hold;
+
+	//--- the camera -----------------------------------------------------------
+	if( shakeOverride )
+	{
+		sensor::setShakeForTest( u, shakeTestHz, shakeTestAmp, now );
+	}
+	else
+	{
+		const float base      = controls::ShakeFrequencyHz( params[ PT_FREQUENCY ] );
+		const float audioGain = 1.0f + drive * audioLevel;
+		//The audio's own contribution stands even with Amount at zero: a
+		//speaker next to a still tripod still moves it.
+		const float translate = controls::ShakeAmplitude( params[ PT_AMOUNT ] ) * audioGain + drive * 0.004f * audioLevel;
+		const float rotate    = controls::ShakeRotationRadians( params[ PT_ROTATION ] ) * audioGain;
+		sensor::setShake( u, base, translate, rotate, now );
+	}
+
+	if( lastOnset >= 0.0 && onsetAmp > 0.0f && now - lastOnset < 2.0 )
+	{
+		u.onsetTau    = static_cast< float >( now - lastOnset );
+		u.shakeActive = 1;
+	}
+	u.onsetAmp   = onsetAmp;
+	u.onsetHz    = controls::ShakeFrequencyHz( params[ PT_FREQUENCY ] );
+	u.onsetDecay = 0.25f;
+
+	//--- the flash and the light ----------------------------------------------
+	sensor::setFlashes( u, flashes.data(), static_cast< int >( flashes.size() ), now );
+	sensor::setMains( u, controls::MainsHz( params[ PT_MAINS ] ), params[ PT_DEPTH ], now );
+	u.mixAmount = params[ PT_MIX ];
+
 	{
 		glBindFramebuffer( GL_FRAMEBUFFER, pGL->HostFBO );
 		glViewport( hostViewport[ 0 ], hostViewport[ 1 ], hostViewport[ 2 ], hostViewport[ 3 ] );
@@ -591,98 +596,36 @@ FFResult Readout::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		glBindTexture( GL_TEXTURE_2D_ARRAY, ring.TextureID() );
 
 		readoutShader.Set( "Ring", 0 );
-		readoutShader.Set( "Slots", slots );
+		readoutShader.Set( "Slots", u.slots );
 		readoutShader.Set( "Head", head );
-		readoutShader.Set( "Filled", filled );
-		readoutShader.Set( "PictureSize", static_cast< float >( pictureWidth ), static_cast< float >( pictureHeight ) );
+		readoutShader.Set( "Filled", u.filled );
+		readoutShader.Set( "PictureSize", static_cast< float >( u.width ), static_cast< float >( u.height ) );
 
-		//In frames, computed in double: the harness sets a readout of exactly
-		//one frame, and 1.0 has to arrive as 1.0.
-		readoutShader.Set( "FrameSeconds", static_cast< float >( frameSeconds ) );
-		readoutShader.Set( "ReadoutFrames", static_cast< float >( readoutSeconds / frameSeconds ) );
-		readoutShader.Set( "ExposureFrames", static_cast< float >( exposure / frameSeconds ) );
-		readoutShader.Set( "Direction", direction );
-		readoutShader.Set( "Hold", hold );
-
-		//--- the camera ---------------------------------------------------
-		float hz[ kShakeComponents ]         = {};
-		float phase[ kShakeComponents * 3 ]  = {};
-		float amp[ kShakeComponents * 3 ]    = {};
-		bool active                          = false;
-
-		if( shakeOverride )
-		{
-			hz[ 0 ]    = shakeTestHz;
-			amp[ 0 ]   = shakeTestAmp;
-			phase[ 0 ] = reducedAngle( kTau * shakeTestHz, now );
-			active     = shakeTestAmp > 0.0f;
-		}
-		else
-		{
-			const float base       = controls::ShakeFrequencyHz( params[ PT_FREQUENCY ] );
-			const float audioGain  = 1.0f + drive * audioLevel;
-			//The audio's own contribution stands even with Amount at zero: a
-			//speaker next to a still tripod still moves it.
-			const float translate  = controls::ShakeAmplitude( params[ PT_AMOUNT ] ) * audioGain + drive * 0.004f * audioLevel;
-			const float rotate     = controls::ShakeRotationRadians( params[ PT_ROTATION ] ) * audioGain;
-
-			for( int i = 0; i < kShakeComponents; ++i )
-			{
-				const float f = base * kShakeRatio[ i ];
-				const float w = kShakeWeight[ i ] / kShakeWeightSum;
-				hz[ i ]       = f;
-				for( int axis = 0; axis < 3; ++axis )
-					phase[ i * 3 + axis ] = reducedAngle( kTau * f, now + kPhaseOffset[ i ][ axis ] / ( kTau * f ) );
-				amp[ i * 3 + 0 ] = translate * w * 0.8f;
-				amp[ i * 3 + 1 ] = translate * w;
-				amp[ i * 3 + 2 ] = rotate * w;
-			}
-			active = translate > 0.0f || rotate > 0.0f;
-		}
-
-		float onsetTau = -1.0f;
-		if( lastOnset >= 0.0 && onsetAmp > 0.0f && now - lastOnset < 2.0 )
-		{
-			onsetTau = static_cast< float >( now - lastOnset );
-			active   = true;
-		}
+		readoutShader.Set( "FrameSeconds", u.frameSeconds );
+		readoutShader.Set( "ReadoutFrames", u.readoutFrames );
+		readoutShader.Set( "ExposureFrames", u.exposureFrames );
+		readoutShader.Set( "Direction", u.direction );
+		readoutShader.Set( "Hold", u.hold );
 
 		//FFGLShader::Set has no array overloads; these go through GL directly.
-		glUniform1fv( glGetUniformLocation( program, "ShakeHz" ), kShakeComponents, hz );
-		glUniform3fv( glGetUniformLocation( program, "ShakePhase" ), kShakeComponents, phase );
-		glUniform3fv( glGetUniformLocation( program, "ShakeAmp" ), kShakeComponents, amp );
-		readoutShader.Set( "ShakeActive", active ? 1 : 0 );
-		readoutShader.Set( "OnsetTau", onsetTau );
-		readoutShader.Set( "OnsetAmp", onsetAmp );
-		readoutShader.Set( "OnsetHz", controls::ShakeFrequencyHz( params[ PT_FREQUENCY ] ) );
-		readoutShader.Set( "OnsetDecay", 0.25f );
+		glUniform1fv( glGetUniformLocation( program, "ShakeHz" ), kShakeComponents, u.shakeHz );
+		glUniform3fv( glGetUniformLocation( program, "ShakePhase" ), kShakeComponents, u.shakePhase );
+		glUniform3fv( glGetUniformLocation( program, "ShakeAmp" ), kShakeComponents, u.shakeAmp );
+		readoutShader.Set( "ShakeActive", u.shakeActive );
+		readoutShader.Set( "OnsetTau", u.onsetTau );
+		readoutShader.Set( "OnsetAmp", u.onsetAmp );
+		readoutShader.Set( "OnsetHz", u.onsetHz );
+		readoutShader.Set( "OnsetDecay", u.onsetDecay );
 
-		//--- the flash -----------------------------------------------------
-		float pulse[ kMaxFlashes * 4 ] = {};
-		float rgb[ kMaxFlashes * 3 ]   = {};
-		const int count                = static_cast< int >( flashes.size() );
-		for( int j = 0; j < count; ++j )
-		{
-			const Flash& f     = flashes[ static_cast< size_t >( j ) ];
-			pulse[ j * 4 + 0 ] = static_cast< float >( ( now - f.centre ) + 0.5 * f.length );
-			pulse[ j * 4 + 1 ] = f.length;
-			pulse[ j * 4 + 2 ] = f.level;
-			rgb[ j * 3 + 0 ]   = f.rgb[ 0 ];
-			rgb[ j * 3 + 1 ]   = f.rgb[ 1 ];
-			rgb[ j * 3 + 2 ]   = f.rgb[ 2 ];
-		}
-		readoutShader.Set( "FlashCount", count );
-		glUniform4fv( glGetUniformLocation( program, "FlashPulse" ), kMaxFlashes, pulse );
-		glUniform3fv( glGetUniformLocation( program, "FlashRGB" ), kMaxFlashes, rgb );
+		readoutShader.Set( "FlashCount", u.flashCount );
+		glUniform4fv( glGetUniformLocation( program, "FlashPulse" ), kMaxFlashes, u.flashPulse );
+		glUniform3fv( glGetUniformLocation( program, "FlashRGB" ), kMaxFlashes, u.flashRGB );
 
-		//--- the light -----------------------------------------------------
-		const float mainsHz = controls::MainsHz( params[ PT_MAINS ] );
-		const double omega  = kTau * 2.0 * mainsHz;
-		readoutShader.Set( "MainsOmega", static_cast< float >( omega ) );
-		readoutShader.Set( "MainsPhase", mainsHz > 0.0f ? reducedAngle( omega, now ) : 0.0f );
-		readoutShader.Set( "MainsDepth", mainsHz > 0.0f ? controls::FlickerDepth( params[ PT_DEPTH ] ) : 0.0f );
+		readoutShader.Set( "MainsOmega", u.mainsOmega );
+		readoutShader.Set( "MainsPhase", u.mainsPhase );
+		readoutShader.Set( "MainsDepth", u.mainsDepth );
 
-		readoutShader.Set( "MixAmount", params[ PT_MIX ] );
+		readoutShader.Set( "MixAmount", u.mixAmount );
 		quad.Draw();
 
 		glBindTexture( GL_TEXTURE_2D_ARRAY, 0 );

@@ -42,6 +42,35 @@ endif()
 
 option(READOUT_BUILD_TOOLS "Build the offline render and measurement harness" ON)
 
+# The FFGL plugin, the FFGL SDK submodule and GLEW are one dependency group, and
+# the OpenFX plugin belongs to none of it. Turning this OFF builds the OFX plugin
+# alone, with no GL loader anywhere in the configure -- which is what the Linux
+# job does, because the FFGL SDK has no Linux path and GLEW would otherwise have
+# to be installed to build something that never calls it.
+option(READOUT_BUILD_FFGL "Build the FFGL plugin (needs the FFGL SDK and, off macOS, GLEW)" ON)
+
+# ---------------------------------------------------------------------------
+# The parts with no GL in them at all: what a slider position means, and the
+# sensor model -- the shake, the flash schedule, the ring depth, every uniform
+# the readout pass is handed, and the C++ mirror of that pass.
+#
+# A separate library from the FFGL core because both plugins need it and only
+# one of them has a GL context. The OpenFX build renders on the CPU, and the
+# Linux job configures no GL loader at all, so nothing here may include the
+# FFGL SDK. Splitting it is what lets the OFX build link the SAME arithmetic
+# rather than a second transcription of it.
+# ---------------------------------------------------------------------------
+add_library(readout_model OBJECT
+    source/Controls.h
+    source/Controls.cpp
+    source/Sensor.h
+    source/Sensor.cpp
+)
+target_include_directories(readout_model PUBLIC source)
+set_target_properties(readout_model PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+if(READOUT_BUILD_FFGL)
+
 # ---------------------------------------------------------------------------
 # The Resolume FFGL SDK, as a git submodule pinned to b1afaf9 -- the rev the
 # rest of the fleet pins.
@@ -70,8 +99,6 @@ add_library(readout_core OBJECT
     source/StoatworksAboutParams.h
     source/Diag.h
     source/Diag.cpp
-    source/Controls.h
-    source/Controls.cpp
     source/Ring.h
     source/Ring.cpp
     source/Shaders.h
@@ -81,7 +108,7 @@ add_library(readout_core OBJECT
 )
 
 target_include_directories(readout_core PUBLIC source)
-target_link_libraries(readout_core PUBLIC ffgl::sdk)
+target_link_libraries(readout_core PUBLIC ffgl::sdk readout_model)
 target_compile_definitions(readout_core PUBLIC READOUT_VERSION="${PROJECT_VERSION}")
 set_target_properties(readout_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -104,7 +131,12 @@ endif()
 # ---------------------------------------------------------------------------
 function(readout_add_plugin target entry bundle_name identifier)
     add_library(${target} MODULE ${entry})
-    target_link_libraries(${target} PRIVATE readout_core)
+    # readout_model is named again here, and on every other final target,
+    # because an OBJECT library's objects do NOT travel transitively through a
+    # second OBJECT library. readout_core linking it gives this target the
+    # include paths and nothing to link, and the failure is a pile of
+    # undefined symbols at the very last step of an otherwise clean build.
+    target_link_libraries(${target} PRIVATE readout_core readout_model)
 
     if(APPLE)
         set_target_properties(${target} PROPERTIES
@@ -132,6 +164,8 @@ readout_add_plugin(Readout source/PluginEntry.cpp
 
 # `cmake --install build` drops the bundle where Arena reads it. Avenue reads
 # ~/Documents/Resolume Avenue/Extra Effects instead; pass --prefix for that.
+# The OpenFX bundle is not installed: /Library/OFX/Plugins is root-owned, and
+# the README says where to copy it.
 if(APPLE AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/Documents/Resolume Arena/Extra Effects"
         CACHE PATH "" FORCE)
@@ -152,8 +186,87 @@ install(TARGETS Readout
 # ---------------------------------------------------------------------------
 if(READOUT_BUILD_TOOLS AND APPLE)
     add_executable(rotest tools/rotest/main.cpp)
-    target_link_libraries(rotest PRIVATE readout_core z
+    target_link_libraries(rotest PRIVATE readout_core readout_model z
         "-framework OpenGL"
         "-framework AppKit"
     )
+endif()
+
+endif()  # READOUT_BUILD_FFGL
+
+# ---------------------------------------------------------------------------
+# The OpenFX build, for Resolve/Nuke/Natron/Vegas. CPU render against the
+# vendored OFX SDK subset under external/openfx (C headers + the official C++
+# Support library, BSD-3). readout_model links straight in, so the controls,
+# the shake, the flash schedule and every uniform are the same code as the
+# FFGL build; only the readout shader's per-pixel main is written twice, in
+# Shaders.cpp and in Sensor.h, and `rotest --mirror` holds the two together.
+# ---------------------------------------------------------------------------
+option(BUILD_OFX "Build the OpenFX plugin" ON)
+
+if(BUILD_OFX)
+    set(OFX_SDK "${CMAKE_CURRENT_SOURCE_DIR}/external/openfx")
+
+    add_library(ReadoutOFX MODULE
+        source/ofx/ReadoutOFX.cpp
+        ${OFX_SDK}/Support/Library/ofxsCore.cpp
+        ${OFX_SDK}/Support/Library/ofxsImageEffect.cpp
+        ${OFX_SDK}/Support/Library/ofxsInteract.cpp
+        ${OFX_SDK}/Support/Library/ofxsLog.cpp
+        ${OFX_SDK}/Support/Library/ofxsMultiThread.cpp
+        ${OFX_SDK}/Support/Library/ofxsParams.cpp
+        ${OFX_SDK}/Support/Library/ofxsProperty.cpp
+        ${OFX_SDK}/Support/Library/ofxsPropertyValidation.cpp
+    )
+    # PRIVATE on an OBJECT library gives both the objects and the usage
+    # requirements. `$<TARGET_OBJECTS:readout_model>` would give the objects
+    # alone -- no include directories, no compile definitions -- and the failure
+    # is platform-specific enough to cost a day.
+    target_link_libraries(ReadoutOFX PRIVATE readout_model)
+    target_include_directories(ReadoutOFX PRIVATE
+        source
+        "${OFX_SDK}/include"
+        "${OFX_SDK}/Support/include"
+    )
+    target_compile_definitions(ReadoutOFX PRIVATE
+        READOUT_VERSION="${PROJECT_VERSION}"
+        PLUGIN_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+        PLUGIN_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    )
+
+    # Threads, explicitly. The OFX Support library's multi-thread suite calls
+    # pthread_create, and on Rocky 8 -- glibc 2.28, the floor Resolve supports --
+    # that still lives in libpthread; libpthread was only folded into libc in
+    # glibc 2.34. Leave it out and the plugin compiles, links, passes a symbol
+    # check and a glibc-version check, and then fails at dlopen with "undefined
+    # symbol: pthread_create". macOS and Windows never show it.
+    find_package(Threads REQUIRED)
+    target_link_libraries(ReadoutOFX PRIVATE Threads::Threads)
+
+    set(OFX_BUNDLE_DIR "${CMAKE_BINARY_DIR}/Readout.ofx.bundle")
+    set_target_properties(ReadoutOFX PROPERTIES
+        PREFIX ""
+        SUFFIX ".ofx"
+        OUTPUT_NAME "Readout"
+        LIBRARY_OUTPUT_DIRECTORY "${OFX_BUNDLE_DIR}/Contents/MacOS"
+    )
+    if(APPLE)
+        set(OFX_BUNDLE_IDENTIFIER "com.stoatworks.readout.ofx")
+        configure_file(cmake/InfoOFX.plist.in
+            "${OFX_BUNDLE_DIR}/Contents/Info.plist" @ONLY)
+    elseif(WIN32)
+        set_target_properties(ReadoutOFX PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY "${OFX_BUNDLE_DIR}/Contents/Win64"
+            RUNTIME_OUTPUT_DIRECTORY "${OFX_BUNDLE_DIR}/Contents/Win64"
+            LIBRARY_OUTPUT_DIRECTORY_RELEASE "${OFX_BUNDLE_DIR}/Contents/Win64"
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE "${OFX_BUNDLE_DIR}/Contents/Win64"
+            # MSVC's .exp/.lib for this target; its default directory collides
+            # with the FFGL target's, which shares the output base name, and a
+            # parallel build then races on the file (LNK1104).
+            ARCHIVE_OUTPUT_DIRECTORY "${OFX_BUNDLE_DIR}/importlib"
+            ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${OFX_BUNDLE_DIR}/importlib")
+    else()
+        set_target_properties(ReadoutOFX PROPERTIES
+            LIBRARY_OUTPUT_DIRECTORY "${OFX_BUNDLE_DIR}/Contents/Linux-x86-64")
+    endif()
 endif()

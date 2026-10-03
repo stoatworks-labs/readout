@@ -2,14 +2,12 @@
 
 #include <FFGLSDK.h>
 
+//kMaxSlots, the deepest the ring goes, lives in Sensor.h: the OpenFX build
+//has no ring, but it bounds its temporal window by the same number.
+#include "Sensor.h"
+
 namespace readout
 {
-/// The most frames the ring will hold. Sixteen full pictures is a quarter of
-/// a gigabyte at 4K, and it covers a 60 ms readout plus a 40 ms exposure at
-/// any frame rate up to about 140 fps; past that the oldest rows simply read
-/// the oldest frame there is.
-constexpr int kMaxSlots = 16;
-
 /**
 	The last N input frames, as the layers of one array texture.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Ring.h"
+#include "Sensor.h"
 #include "StoatworksAboutParams.h"
 
 #include <FFGLSDK.h>
@@ -131,11 +132,10 @@ public:
 	/// Resolume delivers.
 	static constexpr int kAudioBins = 64;
 
-	/// Pulses kept in flight. A pulse is dropped once every row's window has
-	/// passed it; four covers a strobe at the shortest interval.
-	static constexpr int kMaxFlashes = 4;
-
-	static constexpr int kShakeComponents = 4;
+	/// Pulses kept in flight, and the shake's sinusoids. Both live in
+	/// Sensor.h, which the OpenFX build shares.
+	static constexpr int kMaxFlashes      = readout::sensor::kMaxFlashes;
+	static constexpr int kShakeComponents = readout::sensor::kShakeComponents;
 
 private:
 	/// The host's clock in seconds, whatever unit it arrived in, and the
@@ -178,14 +178,9 @@ private:
 	double frameSeconds = 1.0 / 60.0;
 
 	//--- the flash -----------------------------------------------------------
-	struct Flash
-	{
-		double centre;///< host seconds the middle of the pulse landed
-		float length;
-		float level;
-		float rgb[ 3 ];
-	};
-	std::vector< Flash > flashes;
+	/// In flight, oldest first. A pulse is kept by its centre in host seconds;
+	/// see sensor::Pulse.
+	std::vector< readout::sensor::Pulse > flashes;
 
 	/// Set by the Fire button on its rising edge. -2 is "pressed, but this
 	/// call has no idea what time it is"; ProcessOpenGL turns it into a pulse.

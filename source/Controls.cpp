@@ -52,6 +52,10 @@ const float kFlashColours[ kFlashColourCount ][ 3 ] = {
 const char* const kFlashColourNames[ kFlashColourCount ] = {
 	"White", "Warm", "Cool", "Amber", "Red", "Green", "Blue", "Magenta"
 };
+
+const char* const kDirectionNames[ kDirectionCount ]         = { "Top Down", "Bottom Up", "Left Right", "Right Left" };
+const char* const kInterpolationNames[ kInterpolationCount ] = { "Blend", "Hold" };
+const char* const kMainsNames[ kMainsCount ]                 = { "Off", "50 Hz", "60 Hz" };
 } // namespace
 
 float ReadoutSeconds( float value )
@@ -159,6 +163,21 @@ void FlashColour( float optionValue, float rgb[ 3 ] )
 const char* FlashColourName( int index )
 {
 	return kFlashColourNames[ std::clamp( index, 0, kFlashColourCount - 1 ) ];
+}
+
+const char* DirectionName( int index )
+{
+	return kDirectionNames[ std::clamp( index, 0, kDirectionCount - 1 ) ];
+}
+
+const char* InterpolationName( int index )
+{
+	return kInterpolationNames[ std::clamp( index, 0, kInterpolationCount - 1 ) ];
+}
+
+const char* MainsName( int index )
+{
+	return kMainsNames[ std::clamp( index, 0, kMainsCount - 1 ) ];
 }
 
 } // namespace readout::controls

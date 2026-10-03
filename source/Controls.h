@@ -79,4 +79,36 @@ void FlashColour( float optionValue, float rgb[ 3 ] );
 constexpr int kFlashColourCount = 8;
 const char* FlashColourName( int index );
 
+/// The option lists both builds declare, in their natural order and NOT
+/// sorted: every one is a progression (a direction, a frequency) or a
+/// palette, and alphabetical would file 50 Hz under 5 and Off under O.
+constexpr int kDirectionCount = 4;
+const char* DirectionName( int index );
+constexpr int kInterpolationCount = 2;
+const char* InterpolationName( int index );
+constexpr int kMainsCount = 3;
+const char* MainsName( int index );
+
+/**
+	The defaults, in the units somebody would name them, so that what the
+	README says the default is, is the default -- in both builds.
+
+	They add up to a 20 ms readout with a 4 ms exposure and nothing else: a
+	sensor a little slower than a phone's, on a still tripod, with no flash and
+	no flicker. Moving content leans; nothing else happens until asked. The
+	null is Global.
+*/
+namespace defaults
+{
+constexpr float kReadoutSeconds     = 0.020f;
+constexpr float kExposureSeconds    = 0.004f;
+constexpr float kShakeHz            = 8.0f;
+constexpr float kInterval           = 0.624f;///< a slider position: about one second
+constexpr float kFlashLengthSeconds = 0.002f;
+constexpr float kPhase              = 0.3f;
+constexpr float kLevel              = 0.5f;///< unity after mapping
+constexpr float kDepth              = 0.5f;
+constexpr float kMix                = 1.0f;
+} // namespace defaults
+
 } // namespace readout::controls

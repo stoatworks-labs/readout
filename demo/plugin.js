@@ -486,7 +486,7 @@ const kTau = 6.283185307179586;
 /** Seconds of clock a single frame is allowed to advance by. */
 const kMaxFrameDelta = 0.25;
 
-/** The most frames the ring will hold — Ring.h's kMaxSlots. */
+/** The most frames the ring will hold — Sensor.h's kMaxSlots. */
 const kMaxSlots = 16;
 
 const kShakeComponents = 4;
