@@ -109,9 +109,12 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
   registered, loaded and instantiated in Arena 7.27.1 on Windows on 2026-09-21, on Mesa
   llvmpipe, with the shaders compiling — no GPU, and nothing timed there. Everything
   numeric is still measured offline on macOS, plus an `oxbow` load. No user guide.
-- **The OpenFX build failed in Resolve 21.1's Fusion page** (no frame rate there). Fixed
-  and checked under the test host's Fusion imitation, **not yet re-run in Resolve**;
-  never loaded in Vegas, Nuke or Natron. On `main` but unreleased until the next tag.
+- **The OpenFX build has been in one real host: Resolve 21.1's Fusion page on macOS.**
+  The first build failed there (no frame rate); the fixed one renders there
+  byte-identical to the test host at 24 fps (2026-10-04, frames 0–5, earlier frames
+  fetched). Never on Resolve's Edit or Color page, never loaded in Vegas, Nuke or
+  Natron; the Windows and Linux builds have never rendered in a host. Released from
+  v0.2.0.
 - The **project video** is up (`1dYEzeCZF1Y`). Its scripts live in
   `stoatworks-backend/video/projects/readout` and its footage is `rotest --pipe` on
   Resolume's demo clips — nothing in it was recorded off a screen, and nothing in it

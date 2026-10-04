@@ -527,7 +527,7 @@ macOS-only. The effect was applied to the **composition**, not to a clip:
 `/api/v1/…/clips/1` still showed only `Transform` afterwards, so the proof of
 instantiation is the diag log rather than the clip's effect list.
 
-### The OpenFX build (2026-10-03, unreleased)
+### The OpenFX build (2026-10-03, released in v0.2.0)
 
 Every number below is from this machine (M4 Max, macOS 26.4.1) unless it says CI. The
 "test host" is a CPU OpenFX host built from `resolume-ofx-bridge`'s `ofxprobe` with
@@ -590,6 +590,16 @@ image sequences, `--time`, `--frame-rate`, `--batch`, `--frames-needed` and
   alone. A clip numbered 1001–1030, rendered at 1015 under the quirk, is identical to
   the normal host. Against a render of the current frame alone (Global, no exposure)
   the longest-window quirk render differs by 210/255 — it reached back.
+- **In DaVinci Resolve Studio 21.1, after the fix (2026-10-04).** The lead re-ran the
+  fixed build on macOS as a Fusion tool — MediaIn → Readout → MediaOut, a render job to
+  PNG — over frames 0–5 of a 1920×1080 moving card with Amount 0.8 and Readout Time 0.8,
+  and rendered the same frames from the same bundle in the test host at
+  `--frame-rate 24`, Fusion's fallback here. **Byte-identical**, worst 0/255, in all six
+  frames, while the effect changed 286,389 pixels of frame 0 (no history yet) and up to
+  705,684 of the rest. At that readout the top rows reach back to `t − 1`, and a fetch
+  Resolve refused would read the current frame instead and differ — so Fusion hands the
+  earlier frames over as the test host does. Whether it calls `getFramesNeeded` to do so
+  was not logged.
 - **Nothing else moved.** After the fix, the 65 OpenFX frames of the normal-host
   comparison above are byte-identical to the build before it, and the determinism
   hashes are unchanged.
@@ -625,13 +635,14 @@ unpremultiplied, RGB and proxy paths are written but unexercised.
   never been put in front of Arena.
 - **No long session, no composition save or reload, and no preset recall in the host**
   were exercised on Windows.
-- ☠️ **The OpenFX build has been in one real host, and failed there.** The lead loaded
-  it into DaVinci Resolve Studio 21.1 as a Fusion tool and the render failed on the
-  missing frame rate (see *The OpenFX build* above). The fix is checked only under the
-  test host's Fusion imitation; it has **not been re-run in Resolve**, and nothing has
-  rendered it on Resolve's Edit or Color page, in Vegas, Nuke or Natron. Nobody has seen
-  whether a real host honours `getFramesNeeded`, or how Resolve shows a keyframeable
-  seconds parameter like Fire At. It is unreleased: it ships with the next tag.
+- ☠️ **The OpenFX build has been in one real host, and only on one page of it.** The
+  lead loaded it into DaVinci Resolve Studio 21.1 on macOS as a Fusion tool; the first
+  build failed there on the missing frame rate, and the fixed one renders there
+  byte-identical to the test host — six frames at one setting, at the 24 fps fallback
+  (see *The OpenFX build* above). Nothing has rendered it on Resolve's Edit or Color
+  page, in Vegas, Nuke or Natron, and the Windows and Linux builds have never rendered
+  in any host. Nobody has seen whether a real host calls `getFramesNeeded`, or how
+  Resolve shows a keyframeable seconds parameter like Fire At. It ships from v0.2.0.
 - **No factory presets**, and therefore none of the preset/host-echo machinery the rest
   of the fleet carries.
 - **`ATTRIBUTIONS.md` is still a provisional hand copy**, in the shape the
