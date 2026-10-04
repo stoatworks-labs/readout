@@ -154,25 +154,29 @@ treated as opaque. Tiles are off — the shake samples up to 6% of the frame awa
 is no `isIdentity`: a still picture comes back unchanged anyway, and the plugin cannot
 know a clip is still without fetching it.
 
-**Fusion reports no frame rate; there, time-based controls assume 24 fps.** Found by the
-lead in DaVinci Resolve Studio 21.1 (2026-10-03): Resolve's Fusion page sets
-`kOfxImageEffectPropFrameRate` on neither the effect nor any clip, reports every clip's
-`kOfxImageEffectPropFrameRange` as [0, 0], and leaves out the unmapped rate and range
-and the two render-status properties. The Support library turns a missing property
-into an exception, so the first build's unguarded `getFrameRate()` failed every render
-with `kOfxStatErrMissingHostFeature` and Fusion said only that the composition "could
-not be processed". Now `frameRate()` tries the output clip, the source clip and the
-effect, each inside its own `try`, takes the first positive finite answer, and falls
-back to 24 (`kFallbackFrameRate`, Resolve's default timeline rate). Readout Time,
-Exposure, the shake, the mains flicker and Fire At are all in seconds, so in Fusion they
-are right only on a 24 fps composition — the plugin description says so.
+**Resolve's Fusion page reports the frame rate on the effect but not on its clips; the
+plugin reads the effect's, and assumes 24 fps only where a host reports none.** Found by
+the lead in DaVinci Resolve Studio 21.1 (2026-10-03; the effect's rate measured
+2026-10-04): Resolve's Fusion page sets `kOfxImageEffectPropFrameRate` on the effect,
+where it follows the timeline (24 in a 24 fps project, 25 in a 25 fps one), but on
+neither clip, and leaves out the clips' unmapped rate and range and the two
+render-status properties. The Support library turns a missing property into an
+exception, so the first build's unguarded read of a clip's `getFrameRate()` failed
+every render with `kOfxStatErrMissingHostFeature` and Fusion said only that the
+composition "could not be processed". Now `frameRate()` tries the output clip, the
+source clip and the effect, each inside its own `try`, and takes the first positive
+finite answer — in Fusion, the effect's — falling back to 24 (`kFallbackFrameRate`,
+Resolve's default timeline rate) only where a host reports none. Readout Time, Exposure,
+the shake, the mains flicker and Fire At are all in seconds, so in Fusion they are right
+at the composition's real rate, not only at 24 fps.
 
 **A frame range with no length is unknown, not one frame long.** `clipStart()` believes
-the source clip's range only when its end is past its start; Fusion's [0, 0] means "try
-the fetch", and a frame the host has not got still comes back as no image, which stops
-the history exactly as the range would have. A fetch that throws rather than returning
-no image is treated the same way, and so is a premultiplication state the host will not
-give (premultiplied, as for an opaque clip).
+the source clip's range only when its end is past its start; a [0, 0] range (the test
+host's `--quirks fusion` reports one) means "try the fetch", and a frame the host has
+not got still comes back as no image, which stops the history exactly as the range would
+have. A fetch that throws rather than returning no image is treated the same way, and so
+is a premultiplication state the host will not give (premultiplied, as for an opaque
+clip).
 
 **The Trigger list differs between builds** — Off, Once, Interval here; Off, Beat, Bar,
 Onset, Interval in Resolume. Nothing crosses between them by index: there are no
@@ -590,32 +594,32 @@ image sequences, `--time`, `--frame-rate`, `--batch`, `--frames-needed` and
   (which also loads the frames), on the test host's 8 threads (it caps there; this
   machine has 16 cores): **3.6 ms** at the defaults, 5.9 ms at the longest window,
   8.7 ms with shake, 12.9 ms with shake, the longest window, mains and Interval.
-- **Fusion, imitated (2026-10-04).** The test host's `--quirks fusion` removes
+- **Stricter than Fusion (2026-10-04).** The test host's `--quirks fusion` removes
   `kOfxImageEffectPropFrameRate` from the effect and every clip, reports every clip's
   frame range as [0, 0], and drops the unmapped pair and the render-status arguments —
-  what Resolve 21.1's Fusion page does. The build before the fix (`922e6e6`) fails
-  there with `kOfxStatErrMissingHostFeature`, as it did in Resolve; this one renders.
-  Under the quirk, five configurations (defaults, the longest window, shake with mains,
-  a Fire At flash, Hold read left to right) × eight frames of the 30-frame card are
-  **byte-identical** to the normal host at `--frame-rate 24`; at frame 15 the plugin
-  asks for 14–15 at the defaults and 12–15 at the longest window; and on frames 80, 84
-  and 89 of a 90-frame card the same five agree with the FFGL build at 24 fps to
-  **worst 1/255** (the Fire At flash lights frame 84 in both). The FFGL harness starts
-  its measured frame period at 1/60 and needs ~80 frames to settle at 24, which is why
-  those frames are late ones; earlier frames differ by tens of levels for that reason
-  alone. A clip numbered 1001–1030, rendered at 1015 under the quirk, is identical to
-  the normal host. Against a render of the current frame alone (Global, no exposure)
-  the longest-window quirk render differs by 210/255 — it reached back.
+  stricter than Resolve 21.1's Fusion page, which does report the effect's rate. The
+  build before the fix (`922e6e6`) fails there with `kOfxStatErrMissingHostFeature`, as
+  it did in Resolve; this one renders. Under the quirk, five configurations (defaults,
+  the longest window, shake with mains, a Fire At flash, Hold read left to right) ×
+  eight frames of the 30-frame card are **byte-identical** to the normal host at
+  `--frame-rate 24`; at frame 15 the plugin asks for 14–15 at the defaults and 12–15 at
+  the longest window; and on frames 80, 84 and 89 of a 90-frame card the same five agree
+  with the FFGL build at 24 fps to **worst 1/255** (the Fire At flash lights frame 84 in
+  both). The FFGL harness starts its measured frame period at 1/60 and needs ~80 frames
+  to settle at 24, which is why those frames are late ones; earlier frames differ by
+  tens of levels for that reason alone. A clip numbered 1001–1030, rendered at 1015
+  under the quirk, is identical to the normal host. Against a render of the current
+  frame alone (Global, no exposure) the longest-window quirk render differs by 210/255 —
+  it reached back.
 - **In DaVinci Resolve Studio 21.1, after the fix (2026-10-04).** The lead re-ran the
   fixed build on macOS as a Fusion tool — MediaIn → Readout → MediaOut, a render job to
   PNG — over frames 0–5 of a 1920×1080 moving card with Amount 0.8 and Readout Time 0.8,
   and rendered the same frames from the same bundle in the test host at
-  `--frame-rate 24`, Fusion's fallback here. **Byte-identical**, worst 0/255, in all six
-  frames, while the effect changed 286,389 pixels of frame 0 (no history yet) and up to
-  705,684 of the rest. At that readout the top rows reach back to `t − 1`, and a fetch
-  Resolve refused would read the current frame instead and differ — so Fusion hands the
-  earlier frames over as the test host does. Whether it calls `getFramesNeeded` to do so
-  was not logged.
+  `--frame-rate 24`. **Byte-identical**, worst 0/255, in all six frames, while the effect
+  changed 286,389 pixels of frame 0 (no history yet) and up to 705,684 of the rest. At
+  that readout the top rows reach back to `t − 1`, and a fetch Resolve refused would read
+  the current frame instead and differ — so Fusion hands the earlier frames over as the
+  test host does. Whether it calls `getFramesNeeded` to do so was not logged.
 - **Nothing else moved.** After the fix, the 65 OpenFX frames of the normal-host
   comparison above are byte-identical to the build before it, and the determinism
   hashes are unchanged.
@@ -653,12 +657,12 @@ unpremultiplied, RGB and proxy paths are written but unexercised.
   were exercised on Windows.
 - ☠️ **The OpenFX build has been in one real host, and only on one page of it.** The
   lead loaded it into DaVinci Resolve Studio 21.1 on macOS as a Fusion tool; the first
-  build failed there on the missing frame rate, and the fixed one renders there
-  byte-identical to the test host — six frames at one setting, at the 24 fps fallback
-  (see *The OpenFX build* above). Nothing has rendered it on Resolve's Edit or Color
-  page, in Vegas, Nuke or Natron, and the Windows and Linux builds have never rendered
-  in any host. Nobody has seen whether a real host calls `getFramesNeeded`, or how
-  Resolve shows a keyframeable seconds parameter like Fire At. It ships from v0.2.0.
+  build failed there on the clips' missing frame rate, and the fixed one renders there
+  byte-identical to the test host at 24 fps — six frames at one setting (see
+  *The OpenFX build* above). Nothing has rendered it on Resolve's Edit or Color page, in
+  Vegas, Nuke or Natron, and the Windows and Linux builds have never rendered in any
+  host. Nobody has seen whether a real host calls `getFramesNeeded`, or how Resolve
+  shows a keyframeable seconds parameter like Fire At. It ships from v0.2.0.
 - **No factory presets**, and therefore none of the preset/host-echo machinery the rest
   of the fleet carries.
 - **`ATTRIBUTIONS.md` is still a provisional hand copy**, in the shape the

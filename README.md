@@ -15,9 +15,9 @@
 > FFGL host and is not Resolume. The [OpenFX build](#openfx--resolve-vegas-nuke-natron)
 > renders the same model on the CPU and is held to the GPU's output pixel for pixel. In
 > **DaVinci Resolve Studio 21.1** on macOS, as a Fusion tool, the first build **failed** —
-> Fusion reports no frame rate — and the fixed one renders there **byte-identical** to the
-> test host at 24 fps, the earlier frames it fetches included. It has never been loaded
-> into Vegas, Nuke or Natron. See [Status](#status).
+> Fusion reports no frame rate on its clips — and the fixed one renders there
+> **byte-identical** to the test host at 24 fps, the earlier frames it fetches included.
+> It has never been loaded into Vegas, Nuke or Natron. See [Status](#status).
 
 A CMOS rolling shutter, as an FFGL effect for [Resolume](https://resolume.com) Arena
 and Avenue, and an OpenFX plugin for DaVinci Resolve, Vegas, Nuke and Natron.
@@ -209,12 +209,12 @@ one set of docs covers both. These are the exceptions, and each has a reason:
   period from its clock, because nothing tells it; an OpenFX host does.
 - **Float stays float.** In a float project a flash at Level 2 is brighter than white
   and is left that way; 8- and 16-bit output is clamped, as Resolume's is.
-- **Fusion reports no frame rate; there, time-based controls assume 24 fps.** Resolve's
-  Fusion page gives an OpenFX plugin no frame rate at all, and Readout Time, Exposure,
-  the shake, the mains flicker and Fire At are all in seconds — so in Fusion they are
-  right only on a 24 fps composition. (Resolve's Edit page does report the timeline's
-  rate.) Fusion also reports every clip's frame range as 0 to 0; the plugin treats that
-  as unknown and fetches the earlier frames anyway, so the readout still reaches back.
+- **Resolve's Fusion page reports the frame rate on the effect but not on its clips; the
+  plugin reads the effect's, and assumes 24 fps only where a host reports none.** So
+  Readout Time, Exposure, the shake, the mains flicker and Fire At, which are all in
+  seconds, are right in Fusion at the composition's own rate. A clip frame range of
+  0 to 0 is treated as unknown: the plugin fetches the earlier frames anyway, so the
+  readout still reaches back.
 
 ## Status
 
@@ -302,7 +302,7 @@ Resolve on 4 October; released in v0.2.0 as the three `readout-ofx-` zips.
 | frame N on its own | frames 2, 12 and 20 with shake, the longest window, mains and Interval flashes: rendered alone, rendered after 0..N−1 in one instance, and rendered first and then backwards all give the **same bytes**; so does a run where the host refuses every fetch outside what `getFramesNeeded` declared, with no fetch refused |
 | the window | at frame 20 the plugin asks for 18–20 at the defaults and 13–20 at the longest window at 60 fps; at 240 fps, 14–20 and 5–20 — the 16-frame bound |
 | float | the same comparison in a 32-bit float project: worst 1/255 |
-| Resolve's Fusion page, imitated | a test host presenting Fusion's properties — no frame rate anywhere, every frame range 0 to 0. The build before the fix fails there exactly as it did in Resolve (`kOfxStatErrMissingHostFeature`); this one renders, **byte-identical** to the normal host at 24 fps in five configurations and eight frames each, asks for frames 12–15 at frame 15 with the longest window, and on settled mid-clip frames of a 90-frame run agrees with the Resolume build at 24 fps to **1/255** — which reads frames `t − k` from its ring, so this does too. A clip numbered from 1001, which Fusion would still call 0 to 0, renders the same as on the normal host |
+| stricter than Resolve's Fusion page | a test host withholding more than Fusion does — no frame rate anywhere, not even the effect's, and every frame range 0 to 0. The build before the fix fails there exactly as it did in Resolve (`kOfxStatErrMissingHostFeature`); this one renders, **byte-identical** to the normal host at 24 fps in five configurations and eight frames each, asks for frames 12–15 at frame 15 with the longest window, and on settled mid-clip frames of a 90-frame run agrees with the Resolume build at 24 fps to **1/255** — which reads frames `t − k` from its ring, so this does too. A clip numbered from 1001, which the test host still reports as 0 to 0, renders the same as on the normal host |
 | **DaVinci Resolve Studio 21.1**, Fusion page | the fixed build on macOS on 4 October 2026, as a Fusion tool (MediaIn → Readout → MediaOut, a render job to PNG): frames 0–5 of a 1920×1080 moving card with Amount 0.8 and Readout Time 0.8 are **byte-identical** to the test host's render of the same frames at 24 fps — including the earlier frames the plugin fetches, so Resolve hands them over as the test host does. The effect changes up to 705,684 of the 2,073,600 pixels in those frames |
 | render cost | 1920×1080 on the test host's 8 threads: **3.6 ms** a frame at the defaults, 5.9 ms at the longest window, 8.7 ms with shake on, 12.9 ms with everything on |
 | the bundle | universal (`x86_64 arm64`), exports `OfxGetPlugin`, names its own binary in its plist and ad-hoc signs; `tools/verify.sh` checks all of it and that a still picture comes back untouched |
@@ -310,17 +310,16 @@ Resolve on 4 October; released in v0.2.0 as the three `readout-ofx-` zips.
 
 **What is not established.** It has been in one real host: **DaVinci Resolve Studio
 21.1** on macOS, as a Fusion tool. The first build **failed** there — Fusion reports no
-frame rate, and the plugin let the missing property fail the render; the fixed build
-renders there, six frames at one setting, at Fusion's assumed 24 fps (see
-[`AGENTS.md`](AGENTS.md)). Nothing has rendered it on Resolve's Edit or Color page, and
-it has never been loaded into Vegas, Nuke or Natron; everything else above is the fleet's
-own probe hosts and this repository's harness. Those hosts hand over 8-bit and float
-RGBA, premultiplied, at full resolution — so the 16-bit path, an unpremultiplied clip,
-an RGB clip and a proxy render scale have never been exercised. Nobody has seen how a
-real host answers for the frames before a clip's head, or how Resolve draws a
-keyframeable seconds parameter like Fire At. The Windows and Linux builds have never
-rendered in a host: the Windows one has never been loaded by anything, and the Linux one
-only by `dlopen`.
+frame rate on its clips, and the plugin let the missing property fail the render; the
+fixed build renders there, six frames at one setting (see [`AGENTS.md`](AGENTS.md)).
+Nothing has rendered it on Resolve's Edit or Color page, and it has never been loaded
+into Vegas, Nuke or Natron; everything else above is the fleet's own probe hosts and
+this repository's harness. Those hosts hand over 8-bit and float RGBA, premultiplied, at
+full resolution — so the 16-bit path, an unpremultiplied clip, an RGB clip and a proxy
+render scale have never been exercised. Nobody has seen how a real host answers for the
+frames before a clip's head, or how Resolve draws a keyframeable seconds parameter like
+Fire At. The Windows and Linux builds have never rendered in a host: the Windows one has
+never been loaded by anything, and the Linux one only by `dlopen`.
 
 ## Build
 

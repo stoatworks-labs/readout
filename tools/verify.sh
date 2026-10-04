@@ -384,14 +384,15 @@ PROBE_PY
 		fi
 
 		#-------------------------------------------------------------------
-		# Resolve's Fusion page, imitated.
+		# Stricter than Resolve's Fusion page.
 		#
-		# Fusion gives an OpenFX plugin no frame rate at all and reports every
-		# clip's frame range as [0, 0]. The first build read the rate unguarded
-		# and every Fusion render failed. A test host with `--quirks fusion`
-		# presents the properties Fusion's way; it is scratch tooling outside
-		# this repo, so the step runs only where one is found -- $OFXHOST, or an
-		# ofxprobe whose --help lists --quirks -- and skips otherwise.
+		# Fusion gives an OpenFX plugin's clips no frame rate (the effect has
+		# one). The first build read a clip's rate unguarded and every Fusion
+		# render failed. A test host with `--quirks fusion` is stricter: it
+		# withholds the effect's rate too and reports every clip's frame range
+		# as [0, 0]. It is scratch tooling outside this repo, so the step runs
+		# only where one is found -- $OFXHOST, or an ofxprobe whose --help lists
+		# --quirks -- and skips otherwise.
 		#
 		# A bar moving across 12 frames, rendered at frame 10 with the longest
 		# window: under the quirk it must render, ask for frames 7..10, equal the

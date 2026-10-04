@@ -100,14 +100,17 @@ constexpr const char* kPluginDescription =
 	"and Onset triggers are not here: OpenFX gives a plugin no audio and no "
 	"transport. Its Fire button becomes Trigger: Once, at the time Fire At "
 	"names.\n\n"
-	"Fusion reports no frame rate; there, time-based controls assume 24 fps. "
-	"Readout Time, Exposure, the shake, the mains flicker and Fire At are all in "
-	"seconds, so they are right only on a 24 fps composition.\n\n"
+	"Resolve's Fusion page reports the frame rate on the effect but not on its "
+	"clips; the plugin reads the effect's, and assumes 24 fps only where a host "
+	"reports none. Readout Time, Exposure, the shake, the mains flicker and "
+	"Fire At are all in seconds, so in Fusion they are right at the "
+	"composition's own rate.\n\n"
 	"https://stoatworks-labs.com";
 
-/// The frame rate when the host will not say. Resolve's Fusion page reports
-/// none at all -- not on the effect, not on any clip -- and 24 is Resolve's
-/// default timeline rate.
+/// The frame rate when the host will not say -- not on either clip, not on
+/// the effect. Resolve's Fusion page leaves it off the clips but reports it
+/// on the effect, so Fusion gets the effect's; 24 is Resolve's default
+/// timeline rate.
 constexpr double kFallbackFrameRate = 24.0;
 
 constexpr const char* kParamReadout       = "readoutTime";
@@ -391,11 +394,12 @@ private:
 	/// is in frames, and everything in the model is in seconds.
 	///
 	/// Every read is guarded on its own. Resolve's Fusion page provides no
-	/// frame rate anywhere, and the Support library turns the missing property
-	/// into an exception -- which, uncaught, fails the whole render with
-	/// kOfxStatErrMissingHostFeature and Fusion reports only that the
-	/// composition "could not be processed". The first positive, finite answer
-	/// wins; with none, kFallbackFrameRate.
+	/// frame rate on either clip (only on the effect), and the Support library
+	/// turns the missing property into an exception -- which, uncaught, fails
+	/// the whole render with kOfxStatErrMissingHostFeature and Fusion reports
+	/// only that the composition "could not be processed". The first positive,
+	/// finite answer wins -- in Fusion, the effect's; with none,
+	/// kFallbackFrameRate.
 	double frameRate() const
 	{
 		const auto guarded = []( auto&& read ) {
@@ -419,12 +423,13 @@ private:
 	}
 
 	/// The first frame the source clip has, or minus infinity when the host
-	/// cannot be believed about it. Fusion reports [0, 0] for every clip, and
-	/// taking that at its word would put every frame before t = 0 out of the
-	/// clip -- and, on a host that also numbered from 0, would leave the
-	/// readout nothing but the current frame. A range with no length is
-	/// therefore "unknown": the fetch is tried, and a frame the host has not
-	/// got comes back as no image, which stops the history just the same.
+	/// cannot be believed about it. A host may report [0, 0] for a clip (the
+	/// test host's --quirks fusion does), and taking that at its word would
+	/// put every frame before t = 0 out of the clip -- and, on a host that
+	/// also numbered from 0, would leave the readout nothing but the current
+	/// frame. A range with no length is therefore "unknown": the fetch is
+	/// tried, and a frame the host has not got comes back as no image, which
+	/// stops the history just the same.
 	double clipStart() const
 	{
 		try

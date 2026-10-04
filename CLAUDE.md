@@ -56,7 +56,7 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Global on returns the input bit-exactly: `./build/rotest --global`
 - A shake at f wobbles at `1/f / T_read`: `./build/rotest --jello`
 - The OpenFX build's CPU readout matches the GPU frame for frame: `./build/rotest --mirror`
-- Resolve's Fusion page, imitated: `OFXHOST=<a test host with --quirks fusion> tools/verify.sh`
+- Stricter than Resolve's Fusion page: `OFXHOST=<a test host with --quirks fusion> tools/verify.sh`
   — the step skips when no such host is found (the bridge's stock ofxprobe has none)
 - No dead controls: `python3 tools/sweep.py` (`--size WxH`, `--jobs N`)
 - Render cost: `./build/rotest --bench`
@@ -76,10 +76,10 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
   `t - sensor::oldestAge`, never more than 16 frames. No audio, Beat, Bar, Onset or
   Fire button; Trigger is Off/Once/Interval anchored at Fire At (seconds).
 - **Never read a host property unguarded in `ReadoutOFX.cpp`.** Resolve's Fusion page
-  has no frame rate at all (the Support library throws, the render fails) and reports
-  every frame range as [0, 0]. `frameRate()` falls back to 24; `clipStart()` treats a
-  zero-length range as unknown. Fusion reports no frame rate; there, time-based controls
-  assume 24 fps.
+  has no frame rate on its clips, only on the effect (the Support library throws on the
+  clips' read, the render fails). `frameRate()` tries the output clip, the source clip,
+  then the effect, and falls back to 24 only where a host reports none; `clipStart()`
+  treats a zero-length range as unknown.
 - **Time in the shader is `tau`: seconds BEFORE this frame's timestamp**, never
   absolute. Resolume's clock has been seen at 499,217 s, where a float resolves to
   0.03 s — three whole readouts. Phases are reduced into 0..2π on the CPU, in double.
@@ -110,7 +110,7 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
   llvmpipe, with the shaders compiling — no GPU, and nothing timed there. Everything
   numeric is still measured offline on macOS, plus an `oxbow` load. No user guide.
 - **The OpenFX build has been in one real host: Resolve 21.1's Fusion page on macOS.**
-  The first build failed there (no frame rate); the fixed one renders there
+  The first build failed there (no frame rate on its clips); the fixed one renders there
   byte-identical to the test host at 24 fps (2026-10-04, frames 0–5, earlier frames
   fetched). Never on Resolve's Edit or Color page, never loaded in Vegas, Nuke or
   Natron; the Windows and Linux builds have never rendered in a host. Released from
