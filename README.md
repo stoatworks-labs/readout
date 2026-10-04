@@ -48,15 +48,16 @@ faked.*
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/readout/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.2.0](https://github.com/stoatworks-labs/readout/releases/tag/v0.2.0)** — prebuilt for macOS, Windows and Linux. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`readout-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/readout/releases/download/v0.1.0/readout-0.1.0-macos-universal.dmg) | 213 KB |
-| Universal (Apple Silicon + Intel) · .zip archive | [`readout-macos-universal.zip`](https://github.com/stoatworks-labs/readout/releases/latest/download/readout-macos-universal.zip) | 176 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`readout-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/readout/releases/download/v0.2.0/readout-0.2.0-macos-universal.dmg) | 224 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`readout-macos-universal.zip`](https://github.com/stoatworks-labs/readout/releases/latest/download/readout-macos-universal.zip) | 181 KB |
+| Universal (Apple Silicon + Intel) · .zip archive (OpenFX — Resolve, Vegas, Nuke) | [`readout-ofx-macos-universal.zip`](https://github.com/stoatworks-labs/readout/releases/latest/download/readout-ofx-macos-universal.zip) | 265 KB |
 
 </details>
 
@@ -65,8 +66,18 @@ faked.*
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`readout-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/readout/releases/download/v0.1.0/readout-0.1.0-windows-x86_64-setup.exe) | 221 KB |
+| x64 · .exe installer | [`readout-0.2.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/readout/releases/download/v0.2.0/readout-0.2.0-windows-x86_64-setup.exe) | 226 KB |
 | x64 · .zip archive | [`readout-windows-x86_64.zip`](https://github.com/stoatworks-labs/readout/releases/latest/download/readout-windows-x86_64.zip) | 113 KB |
+| x64 · .zip archive (OpenFX — Resolve, Vegas, Nuke) | [`readout-ofx-windows-x86_64.zip`](https://github.com/stoatworks-labs/readout/releases/latest/download/readout-ofx-windows-x86_64.zip) | 76 KB |
+
+</details>
+
+<details>
+<summary><b>Linux</b> — x64</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| x64 · .zip archive (OpenFX — Resolve, Vegas, Nuke) | [`readout-ofx-linux-x86_64.zip`](https://github.com/stoatworks-labs/readout/releases/latest/download/readout-ofx-linux-x86_64.zip) | 732 KB |
 
 </details>
 
