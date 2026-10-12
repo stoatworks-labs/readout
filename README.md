@@ -1,30 +1,31 @@
 # readout
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
-> (Anthropic), directed and reviewed by a human author. The physics is not asserted
-> but measured: an offline harness drives the real plugin class in a headless GL
-> context and checks each claim against its closed form — a bar moving at v px/frame
-> leans by v, a flash bands `(exposure + length) / readout` of the frame where the
-> phase says, 50 and 60 Hz mains bands sit `T_light / readout` apart, a sinusoidal
-> shake wobbles the rows at `1/f / readout`, and Global returns the input
-> bit-exactly — with a negative control on the last of those so the check can fail.
-> It has been registered, loaded and instantiated in **Resolume Arena 7.27.1 on
-> Windows**, on a software rasteriser, with its shaders compiling. It has **never run
-> on a GPU in Resolume**, and has never been instantiated in Arena on macOS. It is
-> also loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real
-> FFGL host and is not Resolume. The [OpenFX build](#openfx--resolve-vegas-nuke-natron)
-> renders the same model on the CPU and is held to the GPU's output pixel for pixel. In
-> **DaVinci Resolve Studio 21.1** on macOS, as a Fusion tool, the first build **failed** —
-> Fusion reports no frame rate on its clips — and the fixed one renders there
-> **byte-identical** to the test host at 24 fps, the earlier frames it fetches included.
-> It has never been loaded into Vegas, Nuke or Natron. See [Status](#status).
+> (Anthropic), directed and reviewed by a human author. The physics is measured rather than
+> taken on trust: an offline harness drives the real plugin class in a headless GL context and
+> checks each claim against its closed form. A bar moving at v px/frame leans by v, a flash bands
+> `(exposure + length) / readout` of the frame where the phase says, 50 and 60 Hz mains bands sit
+> `T_light / readout` apart, a sinusoidal shake wobbles the rows at `1/f / readout`, and Global
+> returns the input bit-exactly, with a negative control on that last one so the check can fail.
+> It's been registered, loaded and instantiated in **Resolume Arena 7.27.1 on Windows**, on a
+> software rasteriser, with its shaders compiling. It has **never run on a GPU in Resolume**, and
+> has never been instantiated in Arena on macOS. It's also loaded by
+> [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real FFGL host but isn't
+> Resolume. The [OpenFX build](#openfx--resolve-vegas-nuke-natron) renders the same model on the
+> CPU and is held to the GPU's output pixel for pixel. In **DaVinci Resolve Studio 21.1** on
+> macOS, as a Fusion tool, the first build **failed** (Fusion reports no frame rate on its
+> clips), and the fixed one renders there **byte-identical** to the test host at 24 fps, the
+> earlier frames it fetches included. It's never been loaded into Vegas, Nuke or Natron. See
+> [Status](#status).
 
 A CMOS rolling shutter, as an FFGL effect for [Resolume](https://resolume.com) Arena
-and Avenue, and an OpenFX plugin for DaVinci Resolve, Vegas, Nuke and Natron.
+and Avenue, and an OpenFX plugin for DaVinci Resolve, Vegas, Nuke and Natron. It does
+everything a phone does to a video of a gig: the leaning verticals, the jello, the strobe
+that only caught half the frame and the stripes rolling through the lights.
 
 ![A test card read out by a rolling shutter: an amber flash band across the middle, rolling mains-flicker bands, and vertical bars bent by camera shake](docs/hero.png)
 
-<sub>One frame, rendered by `rotest`, the offline harness — not captured from
+<sub>One frame, rendered by `rotest`, the offline harness, rather than captured from
 Resolume. A 52 ms readout: the amber band is a 5 ms flash that only the rows exposed
 while it fired ever saw, the broad horizontal shading is a 50 Hz lamp beating against
 the readout, and the vertical bars are bent because the camera moved while the sensor
@@ -32,17 +33,17 @@ was still reading.</sub>
 
 [![Readout — a CMOS rolling shutter for Resolume](docs/video-thumb.png)](https://www.youtube.com/watch?v=1dYEzeCZF1Y)
 
-*[Watch it](https://www.youtube.com/watch?v=1dYEzeCZF1Y) — 50 seconds: the readout
+*[Watch it](https://www.youtube.com/watch?v=1dYEzeCZF1Y) (50 seconds): the readout
 ramped the full length of its travel until three tumbling rings come apart, a
 wireframe city gone wavy under camera shake, an amber strobe band walking down a dark
-room, mains bands rolling over a glow, all of it at once, and Global as the A/B. Every
-frame is the real plugin's output: an FFGL plugin has no window, so the footage is
-rendered by this repository's own offline harness (`rotest --pipe`, driven by a cue
-sheet) rather than filmed off a screen, on Resolume's own bundled demo clips — most of
-them played fast, because a rolling shutter's lean is how fast the scene moves
-multiplied by the readout, and these loops amble. The audio side is not in it: offline
-the only spectrum there is would be a synthetic one, so it is left out rather than
-faked.*
+room, mains bands rolling over a glow, all of it at once, and Global as the A/B. It's
+all the plugin's own output. An FFGL plugin doesn't have a window to film, so the
+footage comes from this repo's offline harness (`rotest --pipe`, driven by a cue
+sheet) rather than a screen recording, on Resolume's own bundled demo clips. Most of
+them are played fast, because a rolling shutter's lean is how fast the scene moves
+multiplied by the readout, and these loops amble. The audio side isn't in it: offline
+the only spectrum there is would be a synthetic one, so I've left it out rather than
+faked it.*
 
 <!-- downloads:start -->
 
@@ -91,50 +92,50 @@ macOS builds are signed and notarised and open normally. The Windows builds are 
 
 **<https://readout-demo.stoatworks-labs.com>**
 
-Not the plugin — the GLSL from `source/Shaders.cpp`, copied across unedited and run in
-WebGL2 over clips generated in the page, with the frame ring and the control arithmetic
-ported alongside it and the parameters this plugin's constructor declares. No install,
-and nothing you load leaves your machine.
+It isn't the plugin. It's the GLSL from `source/Shaders.cpp`, copied across unedited and
+run in WebGL2 over clips generated in the page, with the frame ring and the control
+arithmetic ported alongside it and the parameters this plugin's constructor declares.
+There's nothing to install, and nothing you load leaves your machine.
 
 Start on the geometry card and drag **Readout Time** to the top. Then turn **Amount** up
-for the jello, set **Mains** to 50 Hz for the bands, and press **Fire** — or set
-**Trigger** to Interval, because one pulse lasts a frame or two, exactly as a real
+for the jello, set **Mains** to 50 Hz for the bands, and press **Fire**, or set
+**Trigger** to Interval, because one pulse lasts a frame or two, just as a real
 strobe does.
 
-Two things are **not** on that page, and it says so itself: the whole audio side (the
+Two things **aren't** on that page, and it says so itself: the whole audio side (the
 spectrum arrives through a Resolume parameter and a browser has no equivalent), and
-Trigger's Beat and Bar, which read Resolume's transport. It is a port, so it is not
-evidence about the plugin either: a browser is not Resolume, GLSL ES 3.00 is not desktop
+Trigger's Beat and Bar, which read Resolume's transport. It's a port, so it isn't
+evidence about the plugin either: a browser isn't Resolume, GLSL ES 3.00 isn't desktop
 GL 4.1 core, and nothing on that page measures anything. The numbers worth trusting are
-in [Status](#status) and come from the harness in this repository.
+in [Status](#status) and come from the harness in this repo.
 
 ## The one idea
 
-A CMOS sensor does not expose a frame. It exposes and reads its **rows**, one after
+A CMOS sensor doesn't expose a frame. It exposes and reads its **rows**, one after
 another. Row *r* of *H* is read `Readout × ( 1 − r / H )` before the frame's
 timestamp, and was integrating light for `Exposure` before that.
 
-So every pixel has a sample window, and the picture is sampled there. That is the
+So every pixel has a sample window, and the picture is sampled there. That's the
 whole plugin.
 
 ## What falls out
 
-None of these is drawn. Each is that sample window applied to something:
+Nothing here is drawn on. Each one is that sample window applied to something:
 
 - **Skew.** A vertical bar moving at *v* px/frame leans by `v × Readout`. The top of
   the frame was read earlier, so it shows the bar further back.
 - **Jello.** Shake the camera and every row sees it in a different position, so a
-  straight edge comes out as a wave — one full cycle every `1/f` of readout.
+  straight edge comes out as a wave, one full cycle every `1/f` of readout.
 - **Flash banding.** A strobe shorter than the readout lights only the rows whose
   exposure window overlapped it. The band is `( Exposure + Length ) / Readout` of the
   frame high, its edges ramp over the shorter of the two, and where it sits is the
   flash's phase.
 - **Light flicker banding.** A mains-driven lamp is brightest twice per cycle, so at
   50 Hz it pulses at 100 Hz. Beat that against the readout and you get rolling dark
-  bands `T_light / Readout` of the frame apart — the reason phone video of a stage
+  bands `T_light / Readout` of the frame apart, which is why phone video of a stage
   looks striped.
 - **The propeller**, and partial frames, and every other rolling-shutter photograph
-  anybody has ever posted — those need no code at all. They are the first item on this
+  anybody has ever posted: those need no code at all. They're the first item on this
   list, applied to content that happens to be rotating.
 
 **Global** sets the readout to zero: a global shutter, for comparison. With nothing
@@ -144,13 +145,13 @@ else switched on it returns the picture untouched, to the byte.
 
 A real sensor samples a continuous scene. This one has the frames the host gave it, at
 the host's frame rate. Between two of them it either **interpolates** (`Blend`) or
-**holds** the older one (`Hold`) — so the lean of a moving bar is right, and the
+**holds** the older one (`Hold`), so the lean of a moving bar is right, and the
 sub-frame detail of anything moving unevenly between two input frames is the
 interpolation's invention rather than an observation.
 
 The camera shake is sampled once per row, not integrated across the exposure. Rows are
 the axis that makes jello and that part is exact; a real sensor would also blur the
-shake, and this does not.
+shake, and this doesn't.
 
 ## Controls
 
@@ -168,10 +169,10 @@ audio. Audio Drive defaults to zero, so with nothing routed the camera sits stil
 ## OpenFX — Resolve, Vegas, Nuke, Natron
 
 The same effect also builds as an OpenFX plugin, **Readout** under **Stoatworks**
-(`com.stoatworks.readout`), for DaVinci Resolve, Vegas Pro, Nuke and Natron. It is
-not a port of the model: the controls, the shake, the flash pulse, the mains light and
+(`com.stoatworks.readout`), for DaVinci Resolve, Vegas Pro, Nuke and Natron. It isn't
+a port of the model: the controls, the shake, the flash pulse, the mains light and
 every number the readout pass is handed come from the same C++ the FFGL build runs
-(`source/Controls.cpp`, `source/Sensor.cpp`). What is written twice is the readout
+(`source/Controls.cpp`, `source/Sensor.cpp`). What's written twice is the readout
 shader's per-pixel arithmetic, which runs on the CPU here, and `rotest --mirror` holds
 the two copies to each other frame by frame.
 
@@ -187,7 +188,7 @@ Linux    /usr/OFX/Plugins/
 ```
 
 On macOS that folder belongs to root, so the copy needs an administrator. The Linux
-build targets glibc 2.28 — Rocky 8, the distro Resolve supports — and newer.
+build targets glibc 2.28 (Rocky 8, the distro Resolve supports) and newer.
 
 ### What is different from the Resolume build
 
@@ -197,25 +198,26 @@ one set of docs covers both. These are the exceptions, and each has a reason:
 - **The ring is the timeline.** Resolume hands the plugin one frame at a time and it
   remembers the last sixteen. An OpenFX host renders frames in any order, alone and
   on several threads, so the plugin instead *fetches* the source at `t − 1`, `t − 2`
-  … through temporal clip access — only as far back as the first row's window reaches
+  … through temporal clip access, only as far back as the first row's window reaches
   (back to `t − 2` at the defaults at 60 fps, `t − 7` at the longest window), and never
-  more than sixteen. That is exact where the Resolume build is merely faithful: a
-  scrub or a dropped frame cannot put pictures in the window that were never
+  more than sixteen. That's exact where the Resolume build is only faithful: a
+  scrub or a dropped frame can't put pictures in the window that were never
   adjacent, and any frame renders on its own the same way every time. At the very
-  start of a clip there is no history yet, and an age the clip has not got reads the
-  oldest frame there is — which is what the Resolume build does while its ring fills.
+  start of a clip there's no history yet, and an age the clip hasn't got reads the
+  oldest frame there is, which is what the Resolume build does while its ring fills.
 - **No audio.** OpenFX gives a plugin no audio input, so **Audio Drive**, **Audio
-  Band** and the **Onset** trigger do not exist here rather than exist and do nothing.
-- **No Beat or Bar.** They read Resolume's transport; OpenFX has none.
+  Band** and the **Onset** trigger don't exist here, rather than existing and doing
+  nothing.
+- **No Beat or Bar.** They read Resolume's transport, and OpenFX has none.
 - **No Fire button.** A press is an event at wall-clock time, and a frame that may be
-  rendered before the frame preceding it cannot depend on one. **Trigger** offers
+  rendered before the frame preceding it can't depend on one. **Trigger** offers
   **Off**, **Once** and **Interval** instead, anchored to the timeline by **Fire At**
-  (seconds — frame number ÷ frame rate — and keyframeable): Once fires on the first
-  frame at or after Fire At, which is the press placed on the edit; Interval fires at
-  Fire At and every Interval after it. Each pulse is exactly the one the Resolume
-  build fires on that frame, centred on that frame's Phase point. Resolume's Interval
-  counts from whichever frame fired last, so its period is Interval rounded up to whole
-  frames; here the schedule is a fixed grid and averages Interval exactly.
+  (seconds, which is frame number ÷ frame rate, and keyframeable): Once fires on the
+  first frame at or after Fire At, which is the press placed on the edit; Interval
+  fires at Fire At and every Interval after it. Each pulse is exactly the one the
+  Resolume build fires on that frame, centred on that frame's Phase point. Resolume's
+  Interval counts from whichever frame fired last, so its period is Interval rounded up
+  to whole frames; here the schedule is a fixed grid and averages Interval exactly.
 - **The frame period is the clip's.** The Resolume build measures the host's frame
   period from its clock, because nothing tells it; an OpenFX host does.
 - **Float stays float.** In a float project a flash at Level 2 is brighter than white
@@ -229,14 +231,14 @@ one set of docs covers both. These are the exceptions, and each has a reason:
 
 ## Status
 
-**v0.2.0, and honestly early — 4 October 2026.** v0.2.0 adds the OpenFX build; the
+**v0.2.0, 4 October 2026, and still early days.** v0.2.0 adds the OpenFX build; the
 Resolume build is the one v0.1.0 shipped on 21 September, refactored to share its
 sensor model and byte-identical to it in the nine configurations compared.
 
 ### Measured offline, on macOS
 
-`tools/verify.sh` passes on this machine (M4 Max, macOS 26.4.1) against a fresh
-universal Release build. What it establishes, in numbers:
+`tools/verify.sh` passes on this Mac (M4 Max, macOS 26.4.1) against a fresh
+universal Release build. Here's what it shows, in numbers:
 
 | check | result |
 | --- | --- |
@@ -251,20 +253,20 @@ universal Release build. What it establishes, in numbers:
 
 Render cost, 60 frames after a warm-up with `glFinish` both sides, at the defaults:
 **0.278 ms** at 720p, **0.517 ms** at 1080p, **0.902 ms** at 1440p and **2.274 ms** at
-4K — a seventh of a 60 fps frame at 4K. Those are macOS figures and only macOS
+4K, which is a seventh of a 60 fps frame at 4K. Those are macOS figures and only macOS
 figures.
 
 ### In Resolume Arena, on Windows — 21 September 2026
 
 The DLL taken to Arena was **cross-compiled in the Parallels guest on this Mac** (ARM64
 Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
-`x64-windows-static-md`), because there is no x64 Windows machine in the local build
+`x64-windows-static-md`), because there's no x64 Windows machine in the local build
 loop. It comes out at **374,272 bytes**, and `dumpbin /EXPORTS` shows **`plugMain`**.
 The *released* DLL is a different build: CI builds x64 Windows on every push and the
 release workflow builds it again on a GitHub runner. That build has never been put in
 front of Arena.
 
-That DLL was taken to win-lab — an x64 Windows 11 Pro VM with **no GPU**: the adapter
+That DLL went to win-lab, an x64 Windows 11 Pro VM with **no GPU**: the adapter
 is the Microsoft Basic Display Adapter, so OpenGL comes from **Mesa llvmpipe** dropped
 in beside Arena. The plugin reported the context itself:
 `GL vendor=Mesa renderer=llvmpipe (LLVM 22.1.8, 256 bits) version=4.5 (Core Profile) Mesa 26.2.0`.
@@ -281,25 +283,25 @@ in beside Arena. The plugin reported the context itself:
 float-overflow trap in Resolume's clock was found, and the detector that votes on the
 host's unit had until now only ever seen a seconds host. Under `oxbow` this plugin's
 own diag log still settles on **seconds** (`scale=1.000000` by frame 60). Under Arena
-the fleet's plugins saw **milliseconds** — a raw host time of about **574,073** — and
+the fleet's plugins saw **milliseconds** (a raw host time of about **574,073**) and
 the detection decided milliseconds there. So the trap is real in Arena and the
-detection handles it. What was not read back is this plugin's own in-Arena vote: the
+detection handles it. What wasn't read back is this plugin's own in-Arena vote: the
 milliseconds line came from a sibling's log, not from `readout`'s.
 
-**What is not established.** It has **never run on a GPU in Resolume** — the Windows
-run was llvmpipe, a software rasteriser — and it has **never been instantiated in
-Arena on macOS**. Nothing was timed on Windows: there is no frame timing from win-lab
+**What is not established.** It has **never run on a GPU in Resolume** (the Windows
+run was llvmpipe, a software rasteriser) and it has **never been instantiated in
+Arena on macOS**. Nothing was timed on Windows: there's no frame timing from win-lab
 at all, so whether the render cost above survives a real host is an open question. The
-effect was applied to the **composition**, not to a clip — `/api/v1/…/clips/1` still
-showed only `Transform` afterwards, so the proof of instantiation is the diag log, not
+effect was applied to the **composition**, not to a clip (`/api/v1/…/clips/1` still
+showed only `Transform` afterwards), so the proof of instantiation is the diag log, not
 the clip's effect list. No long session, no composition save or reload and no preset
 recall in the host were exercised. No real audio reached the plugin in Arena: the audio
 path has still only seen the harness's synthetic spectrum, never Resolume's FFT, and
 the 64-bin mapping is still assumed rather than measured. Beat and Bar have only seen a
 synthetic 120 bpm transport. Resolume has no Linux build, so neither does the FFGL
-plugin. There is no user guide and no factory presets. Nothing has been through a
+plugin. There's no user guide and no factory presets. Nothing has been through a
 show. The [browser demo](#try-it-in-your-browser) is a WebGL2 port and proves nothing
-about the plugin; it exists to be looked at, not to be cited.
+about the plugin; it's there to be looked at, not cited.
 
 ### The OpenFX build — from v0.2.0
 
@@ -319,14 +321,14 @@ Resolve on 4 October; released in v0.2.0 as the three `readout-ofx-` zips.
 | the bundle | universal (`x86_64 arm64`), exports `OfxGetPlugin`, names its own binary in its plist and ad-hoc signs; `tools/verify.sh` checks all of it and that a still picture comes back untouched |
 | Windows and Linux | CI builds the Windows `.ofx`; the Linux one is built in AlmaLinux 8 against glibc 2.28 and `dlopen`ed on a stock Rocky 8, the distro Resolve supports, where it reports `com.stoatworks.readout`. A load, not a render |
 
-**What is not established.** It has been in one real host: **DaVinci Resolve Studio
-21.1** on macOS, as a Fusion tool. The first build **failed** there — Fusion reports no
-frame rate on its clips, and the plugin let the missing property fail the render; the
+**What is not established.** It's been in one real host: **DaVinci Resolve Studio
+21.1** on macOS, as a Fusion tool. The first build **failed** there (Fusion reports no
+frame rate on its clips, and the plugin let the missing property fail the render); the
 fixed build renders there, six frames at one setting (see [`AGENTS.md`](AGENTS.md)).
-Nothing has rendered it on Resolve's Edit or Color page, and it has never been loaded
+Nothing has rendered it on Resolve's Edit or Color page, and it's never been loaded
 into Vegas, Nuke or Natron; everything else above is the fleet's own probe hosts and
-this repository's harness. Those hosts hand over 8-bit and float RGBA, premultiplied, at
-full resolution — so the 16-bit path, an unpremultiplied clip, an RGB clip and a proxy
+this repo's harness. Those hosts hand over 8-bit and float RGBA, premultiplied, at
+full resolution, so the 16-bit path, an unpremultiplied clip, an RGB clip and a proxy
 render scale have never been exercised. Nobody has seen how a real host answers for the
 frames before a clip's head, or how Resolve draws a keyframeable seconds parameter like
 Fire At. The Windows and Linux builds have never rendered in a host: the Windows one has
@@ -334,7 +336,7 @@ never been loaded by anything, and the Linux one only by `dlopen`.
 
 ## Build
 
-Needs CMake 3.15+, a C++17 compiler, and the FFGL SDK submodule.
+You'll need CMake 3.15+, a C++17 compiler, and the FFGL SDK submodule.
 
 ```bash
 git clone --recursive https://github.com/stoatworks-labs/readout
@@ -345,17 +347,17 @@ cmake --install build     # into ~/Documents/Resolume Arena/Extra Effects
 ```
 
 macOS builds are universal (Apple Silicon + Intel) by default; add
-`-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster dev build. Windows needs GLEW via vcpkg.
+`-DCMAKE_OSX_ARCHITECTURES=arm64` for a quicker dev build. Windows needs GLEW via vcpkg.
 The OpenFX plugin builds alongside the FFGL one into `build/Readout.ofx.bundle`;
-`-DBUILD_OFX=OFF` skips it, and `-DREADOUT_BUILD_FFGL=OFF` builds it alone with
-nothing but a compiler — no FFGL SDK, no GLEW — which is how the Linux build is made.
+`-DBUILD_OFX=OFF` skips it, and `-DREADOUT_BUILD_FFGL=OFF` builds it on its own with
+nothing but a compiler (no FFGL SDK, no GLEW), which is how the Linux build is made.
 The x64 Windows DLL that was loaded into Arena was cross-compiled in the Parallels
-guest on this Mac — `cmake -A x64`, MSVC 2022 Build Tools, vcpkg triplet
+guest on this Mac: `cmake -A x64`, MSVC 2022 Build Tools, vcpkg triplet
 `x64-windows-static-md`.
 
 ## Building and testing
 
-The offline harness renders the real plugin class headlessly, on a synthetic 60 fps
+The offline harness renders the real plugin class without a window, on a synthetic 60 fps
 clock and a synthetic transport:
 
 ```bash
