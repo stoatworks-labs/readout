@@ -41,7 +41,9 @@ Read `AGENTS.md` before changing the sample window, the ring or the flash schedu
 - Lives in `demo/`, served at <https://readout-demo.stoatworks-labs.com> by the Worker
   in `wrangler.toml`. No build step — what is committed is what is served.
 - Run it locally: `python3 -m http.server 8795 --directory demo`
-- Deploy: `cf-run npx wrangler deploy` from the repo root, then verify **by content**:
+- Deploy: `.github/workflows/deploy.yml` ships it on every push to main that touches
+  more than docs (before 2026-09-22 it was `cf-run npx wrangler deploy` from the repo
+  root, by hand), then verify **by content**:
   `curl -s 'https://readout-demo.stoatworks-labs.com/?cb=1' | grep -o '<title>[^<]*'`
 - Re-vendor the shared kit: `~/Projects/infrastructure/stoatworks-backend/resolume-demo/sync.sh readout`
   — naming the repo is required, its `repos` array does not list this one.
