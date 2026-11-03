@@ -23,6 +23,8 @@ and Avenue, and an OpenFX plugin for DaVinci Resolve, Vegas, Nuke and Natron. It
 everything a phone does to a video of a gig: the leaning verticals, the jello, the strobe
 that only caught half the frame and the stripes rolling through the lights.
 
+The [project page](https://stoatworks-labs.com/software/readout/) has the downloads and the video.
+
 ![A test card read out by a rolling shutter: an amber flash band across the middle, rolling mains-flicker bands, and vertical bars bent by camera shake](docs/hero.png)
 
 <sub>One frame, rendered by `rotest`, the offline harness, rather than captured from
